@@ -23,6 +23,13 @@ MARTS = (
     "demanda_tecnologias_mensual",
     "salarios_por_tecnologia",
     "tendencia_modalidad",
+    "cobertura_extraccion_mensual",
+)
+NOTA_COBERTURA = (
+    "La API de Adzuna solo entrega los primeros 500 caracteres de la descripción "
+    "de cada oferta, así que en muchas no se llega a mencionar ninguna tecnología. "
+    "Esas ofertas se excluyen de los porcentajes de demanda, que se calculan solo "
+    "sobre las ofertas con al menos una tecnología detectada (ADR-007)."
 )
 MODALIDADES = ["remoto", "hibrido", "presencial"]
 ETIQUETAS_MODALIDAD = {
@@ -69,8 +76,8 @@ def cargar_marts(db_path: str) -> dict[str, pd.DataFrame]:
 def ranking_tecnologias(demanda: pd.DataFrame, top: int) -> pd.DataFrame:
     """Agrega la demanda de varios meses en un ranking.
 
-    El porcentaje se calcula sobre el total de ofertas clasificadas del periodo
-    (no como media de porcentajes mensuales).
+    El porcentaje se calcula sobre el total de ofertas del periodo con al menos
+    una tecnología detectada (no como media de porcentajes mensuales).
 
     Args:
         demanda: Filas de ``demanda_tecnologias_mensual`` del periodo.
@@ -79,7 +86,7 @@ def ranking_tecnologias(demanda: pd.DataFrame, top: int) -> pd.DataFrame:
     Returns:
         DataFrame con ``tecnologia``, ``num_ofertas`` y ``pct_ofertas``.
     """
-    total = demanda.drop_duplicates("mes")["total_ofertas_mes"].sum()
+    total = demanda.drop_duplicates("mes")["total_ofertas_con_tecnologia_mes"].sum()
     ranking = demanda.groupby("tecnologia", as_index=False)["num_ofertas"].sum()
     ranking["pct_ofertas"] = (100 * ranking["num_ofertas"] / total).round(1)
     return ranking.sort_values(
@@ -133,7 +140,10 @@ def grafico_evolucion(serie: pd.DataFrame, color: str) -> alt.Chart:
             tooltip=[
                 alt.Tooltip("pct_ofertas:Q", title="% de ofertas", format=".1f"),
                 alt.Tooltip("num_ofertas:Q", title="Ofertas"),
-                alt.Tooltip("total_ofertas_mes:Q", title="Ofertas del mes"),
+                alt.Tooltip(
+                    "total_ofertas_con_tecnologia_mes:Q",
+                    title="Ofertas del mes con tecnologías",
+                ),
                 alt.Tooltip("yearmonth(mes):T", title="Mes", format="%B %Y"),
             ],
         )
@@ -190,6 +200,47 @@ def grafico_modalidad(
     )
 
 
+def grafico_sin_tecnologia(cobertura: pd.DataFrame, color: str) -> alt.Chart:
+    """Barras por mes con el % de ofertas clasificadas sin ninguna tecnología."""
+    datos = cobertura.assign(
+        mes_etiqueta=cobertura["mes"].dt.strftime("%b %Y"),
+        etiqueta=cobertura["pct_sin_tecnologia"].map("{:.1f} %".format),
+    )
+    orden_meses = datos.sort_values("mes")["mes_etiqueta"].tolist()
+    base = alt.Chart(datos).encode(
+        x=alt.X(
+            "mes_etiqueta:O",
+            title=None,
+            sort=orden_meses,
+            axis=alt.Axis(labelAngle=0),
+            scale=alt.Scale(paddingInner=0.4, paddingOuter=0.2),
+        ),
+        y=alt.Y(
+            "pct_sin_tecnologia:Q",
+            title="% de ofertas sin tecnologías",
+            scale=alt.Scale(domain=[0, 100]),
+        ),
+        tooltip=[
+            alt.Tooltip(
+                "pct_sin_tecnologia:Q", title="% sin tecnologías", format=".1f"
+            ),
+            alt.Tooltip("ofertas_sin_tecnologia:Q", title="Ofertas sin tecnologías"),
+            alt.Tooltip("total_ofertas_clasificadas:Q", title="Ofertas clasificadas"),
+            alt.Tooltip("mes_etiqueta:O", title="Mes"),
+        ],
+    )
+    barras = base.mark_bar(color=color, cornerRadiusEnd=4)
+    etiquetas = base.mark_text(baseline="bottom", dy=-4).encode(
+        text="etiqueta:N", color=alt.value("gray")
+    )
+    return (barras + etiquetas).properties(height=240)
+
+
+def _formato_entero(valor: int) -> str:
+    """Formatea un entero con separador de miles español."""
+    return f"{valor:,}".replace(",", ".")
+
+
 def main() -> None:
     """Construye la página del dashboard."""
     st.set_page_config(page_title="DevRadar", page_icon="📡", layout="wide")
@@ -215,7 +266,8 @@ def main() -> None:
         st.stop()
 
     demanda = marts["demanda_tecnologias_mensual"]
-    if demanda.empty:
+    cobertura = marts["cobertura_extraccion_mensual"]
+    if cobertura.empty:
         st.info(
             "Todavía no hay ofertas clasificadas. Ejecuta el pipeline para cargar datos."
         )
@@ -225,7 +277,7 @@ def main() -> None:
     color_principal = paleta["serie"][0]
 
     # --- Filtros (una sola fila) ---
-    meses = sorted(demanda["mes"].dt.date.unique())
+    meses = sorted(cobertura["mes"].dt.date.unique())
     col_periodo, col_top = st.columns([3, 1])
     with col_periodo:
         if len(meses) > 1:
@@ -241,26 +293,41 @@ def main() -> None:
     with col_top:
         top = st.number_input("Tecnologías en el ranking", 5, 50, 15, step=5)
 
-    en_periodo = demanda["mes"].dt.date.between(desde, hasta)
-    demanda_periodo = demanda[en_periodo]
-    total_ofertas = int(
-        demanda_periodo.drop_duplicates("mes")["total_ofertas_mes"].sum()
+    demanda_periodo = demanda[demanda["mes"].dt.date.between(desde, hasta)]
+    cobertura_periodo = cobertura[cobertura["mes"].dt.date.between(desde, hasta)]
+    total_clasificadas = int(cobertura_periodo["total_ofertas_clasificadas"].sum())
+    total_sin_tecnologia = int(cobertura_periodo["ofertas_sin_tecnologia"].sum())
+    total_con_tecnologia = total_clasificadas - total_sin_tecnologia
+    pct_sin_tecnologia = (
+        100 * total_sin_tecnologia / total_clasificadas if total_clasificadas else 0
     )
 
-    k1, k2 = st.columns(2)
-    k1.metric(
-        "Ofertas clasificadas en el periodo", f"{total_ofertas:,}".replace(",", ".")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Ofertas clasificadas", _formato_entero(total_clasificadas))
+    k2.metric("Con alguna tecnología", _formato_entero(total_con_tecnologia))
+    k3.metric(
+        "Sin ninguna tecnología detectada",
+        f"{pct_sin_tecnologia:.1f} %",
+        help=NOTA_COBERTURA,
     )
-    k2.metric(
-        "Tecnologías distintas detectadas", demanda_periodo["tecnologia"].nunique()
+    k4.metric("Tecnologías distintas", demanda_periodo["tecnologia"].nunique())
+    st.info(
+        f"**El {pct_sin_tecnologia:.0f} % de las ofertas del periodo no tiene "
+        f"ninguna tecnología detectada.** {NOTA_COBERTURA}",
+        icon="ℹ️",
     )
+
+    if demanda_periodo.empty:
+        st.warning("Ninguna oferta del periodo tiene tecnologías detectadas.")
+        st.stop()
 
     # --- Ranking ---
     st.subheader("Tecnologías más demandadas")
     ranking = ranking_tecnologias(demanda_periodo, int(top))
     st.altair_chart(grafico_ranking(ranking, color_principal), width="stretch")
     st.caption(
-        "Etiqueta: % de ofertas clasificadas del periodo que mencionan la tecnología."
+        "Etiqueta: % de las ofertas del periodo con alguna tecnología detectada "
+        "que mencionan esta."
     )
     with st.expander("Ver tabla"):
         st.dataframe(
@@ -294,12 +361,17 @@ def main() -> None:
     with st.expander("Ver tabla"):
         st.dataframe(
             serie.assign(mes=serie["mes"].dt.strftime("%Y-%m"))[
-                ["mes", "num_ofertas", "total_ofertas_mes", "pct_ofertas"]
+                [
+                    "mes",
+                    "num_ofertas",
+                    "total_ofertas_con_tecnologia_mes",
+                    "pct_ofertas",
+                ]
             ].rename(
                 columns={
                     "mes": "Mes",
                     "num_ofertas": "Ofertas",
-                    "total_ofertas_mes": "Ofertas del mes",
+                    "total_ofertas_con_tecnologia_mes": "Ofertas del mes con tecnologías",
                     "pct_ofertas": "% ofertas",
                 }
             ),
@@ -368,6 +440,31 @@ def main() -> None:
             st.caption(
                 "Mediana de las medianas mensuales; solo ofertas con salario explícito."
             )
+
+    # --- Calidad de la extracción ---
+    st.subheader("Ofertas sin tecnologías detectadas")
+    st.caption(
+        "Porcentaje mensual de ofertas clasificadas en las que el LLM no encontró "
+        "ninguna tecnología del catálogo."
+    )
+    st.altair_chart(
+        grafico_sin_tecnologia(cobertura_periodo, color_principal), width="stretch"
+    )
+    with st.expander("Ver tabla"):
+        st.dataframe(
+            cobertura_periodo.sort_values("mes")
+            .assign(mes=lambda df: df["mes"].dt.strftime("%Y-%m"))
+            .rename(
+                columns={
+                    "mes": "Mes",
+                    "total_ofertas_clasificadas": "Ofertas clasificadas",
+                    "ofertas_sin_tecnologia": "Sin tecnologías",
+                    "pct_sin_tecnologia": "% sin tecnologías",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+        )
 
     st.divider()
     st.caption(

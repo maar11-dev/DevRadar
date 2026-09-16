@@ -41,9 +41,10 @@ Estructura en tres capas, siguiendo convención estándar de dbt:
 - **`staging`** (`stg_ofertas`): limpieza básica — normalización de fechas, deduplicado por ID de oferta, tipado de columnas.
 - **`intermediate`** (`int_tecnologias_por_oferta`): "explota" el array de tecnologías detectadas por oferta en una fila por combinación (oferta, tecnología), facilitando agregaciones posteriores.
 - **`marts`**:
-  - `demanda_tecnologias_mensual`: nº y % de ofertas que mencionan cada tecnología, por mes.
+  - `demanda_tecnologias_mensual`: nº y % de ofertas que mencionan cada tecnología, por mes (el % se calcula sobre las ofertas con al menos una tecnología detectada, ver ADR-007).
   - `salarios_por_tecnologia`: media/mediana salarial cuando el dato existe.
   - `tendencia_modalidad`: evolución de remoto/híbrido/presencial en el tiempo.
+  - `cobertura_extraccion_mensual`: ofertas clasificadas y % sin ninguna tecnología detectada, por mes.
 
 ### 4. Orquestación (`.github/workflows/pipeline.yml`)
 Un workflow de GitHub Actions con `schedule: cron` ejecuta semanalmente, en orden: ingesta → extracción LLM → `dbt run` → `dbt test`. Si algún test de dbt falla, el workflow falla y no se publican los datos nuevos, evitando que el dashboard muestre información inconsistente.
@@ -65,6 +66,7 @@ Streamlit lee directamente los marts de DuckDB y expone:
 | `demanda_tecnologias_mensual` | marts | 1 fila = (tecnología, mes) |
 | `salarios_por_tecnologia` | marts | 1 fila = (tecnología, mes) |
 | `tendencia_modalidad` | marts | 1 fila = (modalidad, mes) |
+| `cobertura_extraccion_mensual` | marts | 1 fila = mes |
 
 ## Consideraciones de escalabilidad
 

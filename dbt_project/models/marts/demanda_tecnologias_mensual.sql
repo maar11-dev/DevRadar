@@ -1,3 +1,5 @@
+-- El denominador son las ofertas del mes con al menos una tecnología detectada
+-- (ADR-007): las que no tienen ninguna se analizan en cobertura_extraccion_mensual.
 with
 
 tecnologias_por_mes as (
@@ -9,14 +11,12 @@ tecnologias_por_mes as (
     where fecha_publicacion is not null
 ),
 
-ofertas_por_mes as (
+ofertas_con_tecnologia_por_mes as (
     select
-        cast(date_trunc('month', fecha_publicacion) as date) as mes,
-        count(distinct id_oferta) as total_ofertas_mes
-    from {{ ref('stg_ofertas') }}
-    where tecnologias is not null
-        and fecha_publicacion is not null
-    group by 1
+        mes,
+        count(distinct id_oferta) as total_ofertas_con_tecnologia_mes
+    from tecnologias_por_mes
+    group by mes
 )
 
 select
@@ -24,14 +24,16 @@ select
     tecnologias_por_mes.tecnologia,
     tecnologias_por_mes.mes,
     count(distinct tecnologias_por_mes.id_oferta) as num_ofertas,
-    ofertas_por_mes.total_ofertas_mes,
+    ofertas_con_tecnologia_por_mes.total_ofertas_con_tecnologia_mes,
     round(
-        100.0 * count(distinct tecnologias_por_mes.id_oferta) / ofertas_por_mes.total_ofertas_mes, 2
+        100.0 * count(distinct tecnologias_por_mes.id_oferta)
+        / ofertas_con_tecnologia_por_mes.total_ofertas_con_tecnologia_mes,
+        2
     ) as pct_ofertas
 from tecnologias_por_mes
-inner join ofertas_por_mes
-    on tecnologias_por_mes.mes = ofertas_por_mes.mes
+inner join ofertas_con_tecnologia_por_mes
+    on tecnologias_por_mes.mes = ofertas_con_tecnologia_por_mes.mes
 group by
     tecnologias_por_mes.tecnologia,
     tecnologias_por_mes.mes,
-    ofertas_por_mes.total_ofertas_mes
+    ofertas_con_tecnologia_por_mes.total_ofertas_con_tecnologia_mes

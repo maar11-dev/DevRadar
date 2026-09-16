@@ -14,6 +14,8 @@ venv/
 
 # Datos locales del pipeline (base DuckDB y caché de la API de Adzuna)
 data/
+# Explícito por si algún día se versiona parte de data/: la caché de Adzuna nunca.
+data/cache/
 
 # dbt
 dbt_project/target/

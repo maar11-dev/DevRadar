@@ -92,3 +92,23 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 - Alcance por defecto de cada ejecución: categoría `it-jobs`, ofertas de los últimos 7 días, hasta 5 páginas de 50 resultados (unas 250 ofertas en 5 peticiones), ajustable por línea de comandos.
 - Las URLs de las ofertas se guardan sin parámetros de seguimiento (`utm_*`), que incluyen el identificador de la aplicación; la base se publica como artefacto de Actions.
 - Los salarios que publica Adzuna se guardan aparte en `raw_ofertas` (`salario_min_anunciado`, `salario_max_anunciado`), pero los marts usan solo el salario extraído por el LLM del texto de la oferta, para no mezclar estimaciones con datos explícitos.
+
+---
+
+## ADR-007: Porcentajes de demanda solo sobre ofertas con tecnologías detectadas
+
+**Contexto**: La API de Adzuna solo entrega los primeros 500 caracteres de la descripción de cada oferta (ver ADR-006). En la primera carga real, 32 de 50 ofertas (64 %) no tenían ninguna tecnología detectada por el LLM, normalmente porque el texto recortado no llega a mencionarlas. Con esas ofertas en el denominador, los porcentajes de demanda salían artificialmente bajos (p. ej. LLM en el 10 % de las ofertas, cuando aparecía en el 28 % de las que sí mencionan alguna tecnología).
+
+**Decisión**:
+- En `demanda_tecnologias_mensual`, el porcentaje de cada tecnología se calcula solo sobre las ofertas del mes con al menos una tecnología detectada. La columna del denominador pasa a llamarse `total_ofertas_con_tecnologia_mes`.
+- Se añade el mart `cobertura_extraccion_mensual` (1 fila por mes), con las ofertas clasificadas, las que no tienen ninguna tecnología y su porcentaje (`pct_sin_tecnologia`).
+- El dashboard muestra ese porcentaje junto a los indicadores principales y en un gráfico mensual, con una nota visible que explica que se debe al límite de 500 caracteres de Adzuna.
+
+**Alternativas consideradas**:
+- Mantener todas las ofertas clasificadas en el denominador: descartado, porque mezcla "la oferta no pide esta tecnología" con "no sabemos qué pide la oferta" y subestima la demanda de todas las tecnologías.
+- Añadir una fuente con la descripción completa de la oferta (p. ej. visitando la página de detalle o usando otra API): descartado por ahora. Visitar las páginas de detalle sería scraping, con los problemas de `robots.txt` y de cambios de HTML ya descritos en ADR-006, y otra API supondría un nuevo acuerdo de uso y más cuota de LLM. Queda como mejora futura en el Roadmap del README.
+
+**Consecuencias**:
+- Los porcentajes de demanda responden a "de las ofertas en las que sabemos qué se pide, ¿cuántas piden X?". Se asume que las ofertas sin tecnologías detectadas se reparten igual que las demás, algo que no está garantizado (p. ej. las descripciones más largas o más técnicas podrían estar sobrerrepresentadas).
+- `pct_sin_tecnologia` permite vigilar ese sesgo: si baja al añadir una fuente mejor, los porcentajes de demanda serán más fiables.
+- Cambia el nombre de una columna de `demanda_tecnologias_mensual`; el dashboard y el test de integración se han actualizado en el mismo cambio.

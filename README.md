@@ -99,6 +99,7 @@ cd dbt_project && dbt test
 ## 🗺️ Roadmap
 
 - [ ] Ampliar fuentes de ofertas (más de un portal)
+- [ ] Añadir una fuente con la descripción completa de las ofertas, para reducir el % de ofertas sin tecnologías detectadas por el recorte a 500 caracteres de Adzuna (ver ADR-007)
 - [ ] Añadir detección de rango salarial normalizado
 - [ ] Histórico de tendencias a más de 12 meses
 - [ ] Alertas automáticas ante cambios bruscos de demanda
