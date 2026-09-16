@@ -40,4 +40,4 @@ ruff check .
 
 - No añadir Docker ni dependencias que requieran contenedores: es una restricción intencional del proyecto (entorno de desarrollo sin Docker disponible).
 - No sustituir GitHub Actions por otro orquestador sin registrar la decisión en `docs/decisions.md`.
-- No hacer commit de archivos `.env`, credenciales, ni de la base `.duckdb` con datos reales de producción.
+- No hacer commit de archivos `.env`, credenciales, ni de la base `.duckdb` con datos reales de producción. La única excepción es la rama `data`, que publica exclusivamente el workflow (ADR-008): nunca se escribe en ella a mano.

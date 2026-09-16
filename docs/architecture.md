@@ -47,10 +47,10 @@ Estructura en tres capas, siguiendo convención estándar de dbt:
   - `cobertura_extraccion_mensual`: ofertas clasificadas y % sin ninguna tecnología detectada, por mes.
 
 ### 4. Orquestación (`.github/workflows/pipeline.yml`)
-Un workflow de GitHub Actions con `schedule: cron` ejecuta semanalmente, en orden: ingesta → extracción LLM → `dbt run` → `dbt test`. Si algún test de dbt falla, el workflow falla y no se publican los datos nuevos, evitando que el dashboard muestre información inconsistente.
+Un workflow de GitHub Actions con `schedule: cron` ejecuta semanalmente, en orden: restauración de la base desde la rama `data` → ingesta → extracción LLM → `dbt seed` → `dbt run` → `dbt test` → publicación de la base en la rama `data`. Si algún test de dbt falla, el workflow falla y no se publican los datos nuevos, evitando que el dashboard muestre información inconsistente. La publicación solo hace commit si el contenido de la base ha cambiado (ADR-008).
 
 ### 5. Visualización (`dashboard/app.py`)
-Streamlit lee directamente los marts de DuckDB y expone:
+Streamlit lee directamente los marts de DuckDB (en local, `DBT_DUCKDB_PATH` o `data/devradar.duckdb`; desplegado en Streamlit Community Cloud, la base publicada en la rama `data`, ver ADR-008) y expone:
 - Ranking de tecnologías más demandadas, filtrable por rango de fechas.
 - Evolución temporal de una tecnología concreta.
 - Comparativa de modalidad de trabajo y salarios cuando el dato está disponible.

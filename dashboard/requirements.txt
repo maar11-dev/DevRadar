@@ -1,0 +1,10 @@
+# Dependencias del dashboard desplegado en Streamlit Community Cloud (ADR-008).
+# Streamlit Cloud usa este archivo en lugar del requirements.txt de la raíz,
+# porque está junto a app.py: así no instala dbt, Groq ni las herramientas de desarrollo.
+# Mantener las versiones mínimas alineadas con el requirements.txt de la raíz.
+streamlit>=1.38
+duckdb>=1.0
+pandas>=2.2
+altair>=5.0
+requests>=2.31
+python-dotenv>=1.0

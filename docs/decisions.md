@@ -112,3 +112,32 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 - Los porcentajes de demanda responden a "de las ofertas en las que sabemos qué se pide, ¿cuántas piden X?". Se asume que las ofertas sin tecnologías detectadas se reparten igual que las demás, algo que no está garantizado (p. ej. las descripciones más largas o más técnicas podrían estar sobrerrepresentadas).
 - `pct_sin_tecnologia` permite vigilar ese sesgo: si baja al añadir una fuente mejor, los porcentajes de demanda serán más fiables.
 - Cambia el nombre de una columna de `demanda_tecnologias_mensual`; el dashboard y el test de integración se han actualizado en el mismo cambio.
+
+---
+
+## ADR-008: Despliegue del dashboard en Streamlit Community Cloud con los datos en una rama `data`
+
+**Contexto**: El dashboard necesita estar accesible sin servidor propio, y la base DuckDB solo existía dentro de cada ejecución de Actions (como artefacto que caduca a los 7 días). Además, cada ejecución empezaba con una base vacía, así que el histórico nunca se acumulaba y el dashboard solo podía mostrar la última semana.
+
+**Decisión**:
+- El dashboard se despliega en Streamlit Community Cloud (gratuito) desde la rama `main`, con `dashboard/app.py` como archivo principal y `dashboard/requirements.txt` como dependencias (Streamlit Cloud da prioridad al archivo junto al punto de entrada, así no instala dbt ni Groq).
+- Al final de cada ejecución, y solo si `dbt test` ha pasado, el workflow publica en una rama huérfana `data` una copia compacta de la base completa (`devradar.duckdb`) y una huella de su contenido (`devradar.sha256`, generada por `src/publish_db.py`).
+- Solo se hace commit si la huella cambia. No se compara el archivo binario: reconstruir la base con los mismos datos produce bytes distintos.
+- El push usa el `GITHUB_TOKEN` automático con `permissions: contents: write` como único permiso, y un grupo de `concurrency` evita que dos ejecuciones publiquen a la vez.
+- Al inicio de cada ejecución, el workflow restaura la base desde la rama `data`, de modo que el histórico se acumula y solo se clasifican con el LLM las ofertas nuevas.
+- En Streamlit Cloud no existe `data/devradar.duckdb` (no se versiona en `main`), así que la app descarga la base de `https://raw.githubusercontent.com/maar11-dev/DevRadar/data/devradar.duckdb` y la cachea una hora. En local sigue leyendo `DBT_DUCKDB_PATH` o `data/devradar.duckdb`.
+- No se despliega Streamlit desde la rama `data`: Streamlit Cloud ejecuta el código de la rama elegida y `data` solo contiene la base.
+
+**Alternativas consideradas**:
+- Bucket gratuito de S3/GCS: añade una cuenta cloud, credenciales y permisos que gestionar, en contra del objetivo de no depender de infraestructura propia (ADR-001, ADR-003).
+- Descargar a mano el artefacto de Actions y subirlo: rompe la automatización y el artefacto caduca a los 7 días.
+- Commitear la base en una rama de datos del propio repo (elegida): lo más simple, sin cuentas adicionales ni secretos nuevos, y encaja con el resto del proyecto (GitHub como única plataforma).
+- Publicar solo los marts: más ligero y sin datos crudos, pero impediría restaurar el histórico entre ejecuciones.
+
+**Consecuencias**:
+- Esta decisión matiza ADR-001 y la regla de `CLAUDE.md` sobre no versionar la base: la base con datos reales solo se versiona en la rama `data` y solo la publica el workflow. En `main` y en los commits locales sigue sin versionarse nunca.
+- El repositorio es público, así que la rama `data` expone las tablas crudas: títulos, extractos de 500 caracteres de las descripciones de Adzuna, nombres de empresa, URLs de las ofertas (sin parámetros de seguimiento, ver ADR-006) y las respuestas del LLM. No contiene credenciales. Los términos de Adzuna exigen citarla como fuente; el README de la rama `data` y el dashboard lo hacen.
+- Si el repositorio pasara a ser privado, la descarga por `raw.githubusercontent.com` dejaría de funcionar sin un token.
+- **Riesgo conocido: tamaño.** Git no está pensado para binarios grandes y cada cambio guarda una versión nueva del archivo en el historial de `data`. Medido en local, la base compacta ocupa ~1,8 MB con 50 ofertas; la de la primera ejecución en Actions (250 ofertas) ocupaba 136 KB comprimida en el artefacto. Git guarda los objetos comprimidos, así que cada versión añade al historial una fracción del tamaño real. A este tamaño no hay problema, pero el archivo crecerá cada semana con el histórico. **Si la base supera unos pocos MB (orientativamente, 10 MB), habrá que migrar a un bucket o a Git LFS**, o reescribir la historia de `data` para conservar solo la última versión, y registrarlo en un ADR nuevo.
+- El dashboard muestra datos con hasta una hora de retraso respecto a la última publicación (caché de la descarga); como el pipeline es semanal, es suficiente.
+- La primera vez hay que conectar Streamlit Community Cloud con el repositorio a mano (ver README): no se puede automatizar desde el workflow.

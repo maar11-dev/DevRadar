@@ -83,6 +83,17 @@ streamlit run dashboard/app.py
 
 El pipeline completo se ejecuta semanalmente vía GitHub Actions (`.github/workflows/pipeline.yml`), sin necesidad de infraestructura propia. La API key de Groq se gestiona como *secret* del repositorio (ver [`reglas de seguridad/coding-rules.md`](reglas%20de%20seguridad/coding-rules.md)).
 
+## 🌐 Despliegue del dashboard
+
+El dashboard se sirve en [Streamlit Community Cloud](https://streamlit.io/cloud) (gratuito) y lee los datos de la rama `data` de este repositorio, que el workflow actualiza en cada ejecución (ver ADR-008 en [`docs/decisions.md`](docs/decisions.md)):
+
+- **Código**: rama `main`, archivo principal `dashboard/app.py` (dependencias en `dashboard/requirements.txt`).
+- **Datos**: `devradar.duckdb` en la rama `data`, que la app descarga al arrancar. La rama `data` solo contiene la base, así que **no** hay que seleccionarla en Streamlit.
+
+Streamlit Community Cloud se configura **a mano una sola vez**: hay que conectar la cuenta de GitHub en streamlit.io y crear la app apuntando al repositorio, a la rama `main` y a `dashboard/app.py`. Esto no se puede automatizar desde el pipeline. Después, cada push a `main` redespliega la app y cada ejecución del pipeline actualiza los datos sin intervención.
+
+La rama `data` se crea en la primera ejecución del workflow que termina correctamente; hasta entonces, el dashboard desplegado muestra un aviso de que no hay datos.
+
 ## ✅ Testing
 
 ```bash

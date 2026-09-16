@@ -2,14 +2,24 @@
 
 Lee directamente los marts de dbt en DuckDB (solo lectura).
 Ejecutar con: streamlit run dashboard/app.py
+
+Origen de la base (ver ``resolver_base_datos`` y ADR-008):
+
+- En local: ``DBT_DUCKDB_PATH`` si está definida; si no, ``data/devradar.duckdb``
+  (la misma ruta que usan el pipeline y dbt).
+- Desplegado en Streamlit Community Cloud: ninguna de las dos existe (``data/``
+  no se versiona), así que se descarga ``devradar.duckdb`` de la rama ``data``
+  del repositorio, que el workflow actualiza en cada ejecución (``DATA_BRANCH_DB_URL``).
 """
 
 import sys
+import tempfile
 from pathlib import Path
 
 import altair as alt
 import duckdb
 import pandas as pd
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -17,7 +27,14 @@ if __package__ in (None, ""):
     # `streamlit run dashboard/app.py` solo añade dashboard/ al path.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.db import get_db_path
+from src.db import DEFAULT_DB_PATH, get_db_path
+
+# Base publicada por el workflow en la rama `data` (repo público, sin credenciales).
+# En un fork, cambia `maar11-dev/DevRadar` por tu repositorio.
+DATA_BRANCH_DB_URL = (
+    "https://raw.githubusercontent.com/maar11-dev/DevRadar/data/devradar.duckdb"
+)
+DOWNLOAD_TIMEOUT_SECONDS = 60
 
 MARTS = (
     "demanda_tecnologias_mensual",
@@ -71,6 +88,47 @@ def cargar_marts(db_path: str) -> dict[str, pd.DataFrame]:
     for df in datos.values():
         df["mes"] = pd.to_datetime(df["mes"])
     return datos
+
+
+@st.cache_data(ttl=3600, show_spinner="Descargando los datos publicados…")
+def descargar_base_publicada(url: str) -> str:
+    """Descarga la base de la rama ``data`` a un archivo temporal.
+
+    La descarga se cachea una hora: el pipeline publica datos nuevos una vez
+    por semana, así que no hace falta más frecuencia.
+
+    Args:
+        url: URL del archivo ``devradar.duckdb`` en la rama ``data``.
+
+    Returns:
+        Ruta local del archivo descargado.
+    """
+    destino = Path(tempfile.gettempdir()) / "devradar" / "devradar.duckdb"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    parcial = destino.with_suffix(".part")
+    with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS) as respuesta:
+        respuesta.raise_for_status()
+        with open(parcial, "wb") as archivo:
+            archivo.writelines(respuesta.iter_content(chunk_size=1 << 20))
+    parcial.replace(destino)
+    return str(destino)
+
+
+def resolver_base_datos() -> tuple[Path, str]:
+    """Decide de dónde leer la base: archivo local o rama ``data`` publicada.
+
+    Returns:
+        Tupla ``(ruta local de la base, descripción del origen)``.
+    """
+    ruta_local = get_db_path()
+    if ruta_local != DEFAULT_DB_PATH or ruta_local.exists():
+        # Local: DBT_DUCKDB_PATH definida, o data/devradar.duckdb generado por el pipeline.
+        return ruta_local, f"archivo local `{ruta_local}`"
+    # Desplegado (Streamlit Community Cloud): base publicada en la rama `data`.
+    return (
+        Path(descargar_base_publicada(DATA_BRANCH_DB_URL)),
+        "rama `data` del repositorio",
+    )
 
 
 def ranking_tecnologias(demanda: pd.DataFrame, top: int) -> pd.DataFrame:
@@ -248,7 +306,15 @@ def main() -> None:
     st.title("📡 DevRadar")
     st.caption("¿Qué tecnologías se piden realmente en las ofertas de empleo tech?")
 
-    db_path = get_db_path()
+    try:
+        db_path, origen_datos = resolver_base_datos()
+    except requests.RequestException as exc:
+        st.error(
+            "No se pudo descargar la base publicada en la rama `data`. En local, "
+            "ejecuta el pipeline (`python src/ingest.py` y `dbt build` desde "
+            f"`dbt_project/`) o define `DBT_DUCKDB_PATH`.\n\n`{type(exc).__name__}`"
+        )
+        st.stop()
     if not db_path.exists():
         st.warning(
             f"No se encuentra la base de datos en `{db_path}`. Ejecuta el pipeline "
@@ -470,7 +536,7 @@ def main() -> None:
     st.caption(
         "Datos: [Jobs by Adzuna](https://www.adzuna.es) · The Adzuna API. "
         "Tecnologías, modalidad y salario extraídos automáticamente con un LLM; "
-        "pueden contener errores."
+        f"pueden contener errores. Origen de la base: {origen_datos}."
     )
 
 

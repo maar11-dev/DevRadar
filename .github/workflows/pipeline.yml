@@ -5,6 +5,15 @@ on:
     - cron: '0 6 * * 1'   # todos los lunes a las 06:00 UTC
   workflow_dispatch:        # permite lanzarlo manualmente desde la pestaña Actions
 
+# Permisos mínimos del GITHUB_TOKEN: leer el repo y publicar en la rama `data`.
+permissions:
+  contents: write
+
+# Evita que dos ejecuciones (cron + manual) publiquen a la vez en `data`.
+concurrency:
+  group: devradar-pipeline
+  cancel-in-progress: false
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -33,6 +42,17 @@ jobs:
       - name: Crear carpeta de datos
         run: mkdir -p data
 
+      # Cada ejecución parte de la base publicada la semana anterior, para que el
+      # histórico se acumule y solo se clasifiquen las ofertas nuevas (ADR-008).
+      - name: Restaurar la base de la ejecución anterior (rama data)
+        run: |
+          if git fetch --depth=1 origin data; then
+            git cat-file blob FETCH_HEAD:devradar.duckdb > data/devradar.duckdb
+            echo "Base restaurada desde la rama data ($(du -h data/devradar.duckdb | cut -f1))"
+          else
+            echo "La rama data todavía no existe: se empieza con una base vacía."
+          fi
+
       - name: Ejecutar ingesta de ofertas
         run: python src/ingest.py
 
@@ -58,8 +78,47 @@ jobs:
           path: data/devradar.duckdb
           retention-days: 7
 
-# Nota: el paso de publicación del dashboard (Streamlit) todavía no está
-# incluido aquí — depende de dónde se despliegue (Streamlit Community Cloud,
-# por ejemplo, lee directamente el repo, así que necesitaría el .duckdb
-# accesible desde ahí, no solo como artefacto de Actions). Pendiente de
-# decidir y documentar en docs/decisions.md cuando se resuelva.
+      # Solo se llega aquí si dbt test ha pasado: nunca se publican datos que no
+      # superan los tests. El dashboard desplegado lee de esta rama (ADR-008).
+      - name: Publicar la base en la rama data
+        run: |
+          PUBLICAR_DIR="$RUNNER_TEMP/publicar"
+          RAMA_DIR="$RUNNER_TEMP/rama-data"
+
+          # Copia compacta + huella del contenido. No se compara el binario:
+          # reconstruir la base con los mismos datos cambia sus bytes.
+          python src/publish_db.py data/devradar.duckdb "$PUBLICAR_DIR"
+
+          if git fetch --depth=1 origin data; then
+            git worktree add -B data "$RAMA_DIR" FETCH_HEAD
+          else
+            git worktree add --orphan -b data "$RAMA_DIR"
+          fi
+
+          if cmp -s "$PUBLICAR_DIR/devradar.sha256" "$RAMA_DIR/devradar.sha256"; then
+            echo "Los datos no han cambiado desde la última publicación: no se hace commit."
+            exit 0
+          fi
+
+          cp "$PUBLICAR_DIR/devradar.duckdb" "$PUBLICAR_DIR/devradar.sha256" "$RAMA_DIR/"
+          cat > "$RAMA_DIR/README.md" <<'EOF'
+          # Rama `data`
+
+          Rama generada automáticamente por el workflow **DevRadar Pipeline**; no la edites a mano.
+
+          - `devradar.duckdb`: base con las tablas crudas, el catálogo y los marts de dbt.
+          - `devradar.sha256`: huella del contenido, usada para no publicar si nada ha cambiado.
+
+          El dashboard desplegado en Streamlit Community Cloud descarga `devradar.duckdb` de esta rama.
+          Ver ADR-008 en `docs/decisions.md` (rama `main`).
+
+          Datos de ofertas: Jobs by Adzuna (https://www.adzuna.es) · The Adzuna API.
+          EOF
+
+          cd "$RAMA_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add devradar.duckdb devradar.sha256 README.md
+          git commit -m "data: actualiza la base ($(date -u +%F), ejecución #${{ github.run_number }})"
+          git push origin data
+          echo "Publicada la base en la rama data ($(du -h devradar.duckdb | cut -f1))"
