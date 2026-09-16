@@ -4,10 +4,17 @@ on:
   schedule:
     - cron: '0 6 * * 1'   # todos los lunes a las 06:00 UTC
   workflow_dispatch:        # permite lanzarlo manualmente desde la pestaña Actions
+    inputs:
+      simular_fallo:
+        description: 'Fallar a propósito al inicio (sin llamar a Adzuna ni a Groq) para probar el aviso por issue'
+        type: boolean
+        default: false
 
-# Permisos mínimos del GITHUB_TOKEN: leer el repo y publicar en la rama `data`.
+# Permisos mínimos del GITHUB_TOKEN: publicar en la rama `data` y abrir una
+# issue si la ejecución falla.
 permissions:
   contents: write
+  issues: write
 
 # Evita que dos ejecuciones (cron + manual) publiquen a la vez en `data`.
 concurrency:
@@ -29,15 +36,21 @@ jobs:
 
     steps:
       - name: Checkout del repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
       - name: Instalar dependencias
         run: pip install -r requirements.txt
+
+      - name: Simular un fallo (solo si se pide al lanzarlo a mano)
+        if: ${{ inputs.simular_fallo }}
+        run: |
+          echo "::error::Fallo simulado para probar el aviso por issue."
+          exit 1
 
       - name: Crear carpeta de datos
         run: mkdir -p data
@@ -72,7 +85,7 @@ jobs:
         working-directory: dbt_project
 
       - name: Subir base DuckDB resultante como artefacto
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: devradar-duckdb
           path: data/devradar.duckdb
@@ -122,3 +135,26 @@ jobs:
           git commit -m "data: actualiza la base ($(date -u +%F), ejecución #${{ github.run_number }})"
           git push origin data
           echo "Publicada la base en la rama data ($(du -h devradar.duckdb | cut -f1))"
+
+      # Los fallos del cron no se notan si nadie mira Actions: se abre una issue
+      # (o se comenta la que ya esté abierta), y GitHub avisa por email.
+      - name: Avisar del fallo con una issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITULO: "Fallo del pipeline DevRadar"
+          CUERPO: >-
+            La ejecución #${{ github.run_number }} (${{ github.event_name }}) ha fallado:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          NUMERO=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$TITULO\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$NUMERO" ]; then
+            gh issue comment "$NUMERO" --repo "$GITHUB_REPOSITORY" --body "$CUERPO"
+          else
+            printf '%s\n\n%s\n' "$CUERPO" \
+              "Cierra esta issue cuando esté resuelto; los fallos siguientes abrirán una nueva." \
+              > "$RUNNER_TEMP/issue.md"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITULO" \
+              --body-file "$RUNNER_TEMP/issue.md"
+          fi

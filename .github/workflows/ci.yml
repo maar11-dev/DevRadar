@@ -1,0 +1,49 @@
+name: CI
+
+# Tests y formato en cada push y pull request, para detectar roturas antes de
+# que el pipeline semanal falle. No usa secrets: el test de integración simula
+# las llamadas al LLM y ejecuta dbt contra una base temporal.
+on:
+  push:
+    branches-ignore:
+      - data   # la rama de datos solo contiene la base publicada (ADR-008)
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Caché de los hooks de pre-commit
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Formato y linting (pre-commit)
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Tests unitarios
+        run: pytest tests/unitario
+
+      - name: Tests de integración
+        run: pytest tests/integracion

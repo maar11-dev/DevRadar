@@ -83,6 +83,10 @@ streamlit run dashboard/app.py
 
 El pipeline completo se ejecuta semanalmente vía GitHub Actions (`.github/workflows/pipeline.yml`), sin necesidad de infraestructura propia. La API key de Groq se gestiona como *secret* del repositorio (ver [`reglas de seguridad/coding-rules.md`](reglas%20de%20seguridad/coding-rules.md)).
 
+Si una ejecución falla, el propio workflow abre una issue «Fallo del pipeline DevRadar» (o comenta la que ya esté abierta), de modo que GitHub avisa por email. Para probar el aviso sin consumir cuota de Adzuna ni de Groq, lánzalo a mano marcando la opción *simular_fallo*.
+
+Además, el workflow **CI** (`.github/workflows/ci.yml`) ejecuta `pre-commit` y los tests unitarios y de integración en cada push y pull request, sin necesidad de secrets.
+
 ## 🌐 Despliegue del dashboard
 
 El dashboard se sirve en [Streamlit Community Cloud](https://streamlit.io/cloud) (gratuito) y lee los datos de la rama `data` de este repositorio, que el workflow actualiza en cada ejecución (ver ADR-008 en [`docs/decisions.md`](docs/decisions.md)):
