@@ -9,7 +9,8 @@
 
 ## 🕸️ Buenas prácticas de scraping
 
-- Respetar siempre `robots.txt` de la fuente de datos.
+- Respetar siempre `robots.txt` de la fuente de datos cuando se rastreen páginas web.
+  - `robots.txt` regula el rastreo de páginas, no el acceso a APIs oficiales con credenciales: en ese caso mandan los términos de uso y los límites de la API (p. ej. Adzuna, ver ADR-006). El resto de reglas de esta sección se aplican igualmente a las APIs.
 - Limitar la frecuencia de peticiones (rate limiting) para no sobrecargar el servidor de origen.
 - Usar un `User-Agent` identificable y honesto.
 - Cachear en disco las respuestas ya obtenidas para evitar peticiones redundantes.
@@ -24,7 +25,10 @@
 ## 🧹 Convenciones de código
 
 - Formateo con `black`, linting con `ruff`. Ambos se ejecutan como pre-commit hook.
-- Nombres de funciones y variables en `snake_case`, en inglés, siguiendo el estilo del resto del ecosistema Python/dbt.
+- Nombres de funciones y variables en `snake_case`, con esta convención de idioma:
+  - **Funciones de dominio del negocio, en español**: operan sobre conceptos del problema (ofertas, tecnologías, salarios) y forman la interfaz que usan los tests, p. ej. `normalizar_tecnologias`, `extraer_datos_oferta`, `llamar_llm`. Lo mismo aplica a tablas, modelos y columnas de dbt (`stg_ofertas`, `fecha_publicacion`).
+  - **Utilidades técnicas genéricas, en inglés**: no dependen del dominio y siguen el estilo del ecosistema Python, p. ej. `load_catalog`, `get_db_path`, `create_raw_tables`.
+  - En caso de duda, si la función tendría sentido tal cual en otro proyecto, es una utilidad técnica (inglés); si no, es de dominio (español).
 - Los modelos dbt siguen la convención de prefijos estándar: `stg_`, `int_`, y nombres descriptivos sin prefijo para `marts`.
 - Cada función pública lleva docstring explicando propósito, parámetros y valor de retorno.
 

@@ -1,0 +1,16 @@
+version: 2
+
+seeds:
+  - name: catalogo_tecnologias
+    description: >
+      Catálogo controlado de tecnologías: cada variante (en minúsculas y con
+      espacios normalizados) apunta a su nombre canónico. Lo usan tanto
+      src/normalize.py como int_tecnologias_por_oferta.
+    columns:
+      - name: variante
+        data_tests:
+          - not_null
+          - unique
+      - name: nombre_canonico
+        data_tests:
+          - not_null

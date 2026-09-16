@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: int_tecnologias_por_oferta
+    description: >
+      Una fila por combinación (oferta, tecnología). Las tecnologías se vuelven
+      a validar contra el seed catalogo_tecnologias, de modo que solo llegan a
+      los marts nombres canónicos.
+    columns:
+      - name: id_oferta_tecnologia
+        description: Clave sustituta "id_oferta|tecnologia".
+        data_tests:
+          - not_null
+          - unique
+      - name: id_oferta
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ofertas')
+                field: id_oferta
+      - name: tecnologia
+        data_tests:
+          - not_null
+      - name: fecha_publicacion

@@ -1,0 +1,29 @@
+name: devradar
+version: "1.0.0"
+config-version: 2
+
+profile: devradar
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  devradar:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  devradar:
+    catalogo_tecnologias:
+      +column_types:
+        variante: varchar
+        nombre_canonico: varchar

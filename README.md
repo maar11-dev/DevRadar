@@ -63,16 +63,17 @@ git clone <url-del-repo>
 cd DevRadar
 pip install -r requirements.txt
 
-# Configurar variables de entorno (ver .env.example)
-export GROQ_API_KEY="tu-api-key"
+# Configurar variables de entorno: copiar .env.example como .env y rellenar
+# GROQ_API_KEY, ADZUNA_APP_ID y ADZUNA_APP_KEY
 
-# Ejecutar la ingesta manualmente
-python src/ingest.py
+# Descargar ofertas de Adzuna y clasificarlas con el LLM
+python src/ingest.py            # opciones: --pages N, --country es, --skip-extract
+python src/extract.py           # reprocesa solo las ofertas pendientes o fallidas
 
-# Ejecutar las transformaciones dbt
+# Ejecutar las transformaciones dbt (seed del catálogo + modelos + tests)
 cd dbt_project
-dbt run
-dbt test
+dbt build
+cd ..
 
 # Levantar el dashboard
 streamlit run dashboard/app.py

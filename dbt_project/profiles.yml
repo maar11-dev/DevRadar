@@ -1,0 +1,15 @@
+# La ruta de la base se toma de DBT_DUCKDB_PATH; nunca se escriben credenciales aquí.
+# Si la variable no está definida (o está vacía), se usa data/devradar.duckdb
+# relativo a la raíz del repo (dbt se ejecuta desde dbt_project/).
+devradar:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '') or '../data/devradar.duckdb' }}"
+      threads: 4
+    # Usado por tests/integracion: exige DBT_DUCKDB_PATH apuntando a una base temporal.
+    test:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH') }}"
+      threads: 1

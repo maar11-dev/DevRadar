@@ -1,0 +1,53 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Tablas crudas cargadas por src/ingest.py y src/extract.py.
+    schema: main
+    tables:
+      - name: raw_ofertas
+        description: Una fila por oferta tal como llega de la fuente (Adzuna).
+        columns:
+          - name: id
+            data_tests:
+              - not_null
+      - name: raw_ofertas_clasificadas
+        description: >
+          Una fila por intento de extracción con el LLM. Una oferta puede tener
+          varios intentos (p. ej. reintentos tras un error); staging se queda
+          con el último intento correcto.
+        columns:
+          - name: id_oferta
+            data_tests:
+              - not_null
+
+models:
+  - name: stg_ofertas
+    description: >
+      Una fila por oferta limpia y deduplicada, enriquecida con los campos
+      extraídos por el LLM (último intento sin error). Las ofertas aún no
+      clasificadas aparecen con los campos del LLM a null.
+    columns:
+      - name: id_oferta
+        description: Identificador de la oferta en la fuente.
+        data_tests:
+          - not_null
+          - unique
+      - name: fecha_publicacion
+        description: Fecha de publicación de la oferta.
+      - name: tecnologias
+        description: Tecnologías normalizadas detectadas por el LLM.
+      - name: seniority
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["junior", "mid", "senior"]
+      - name: modalidad
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["remoto", "hibrido", "presencial"]
+      - name: salario_min
+        description: Salario anual bruto mínimo (EUR), si aparece en la oferta.
+      - name: salario_max
+        description: Salario anual bruto máximo (EUR), si aparece en la oferta.

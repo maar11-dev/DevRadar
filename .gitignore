@@ -12,10 +12,14 @@ venv/
 *.duckdb
 *.duckdb.wal
 
+# Datos locales del pipeline (base DuckDB y caché de la API de Adzuna)
+data/
+
 # dbt
 dbt_project/target/
 dbt_project/logs/
 dbt_project/dbt_packages/
+dbt_project/.user.yml
 
 # Streamlit
 .streamlit/secrets.toml

@@ -1,0 +1,250 @@
+variante,nombre_canonico
+.net,.NET
+.net core,.NET
+asp.net,.NET
+asp.net core,.NET
+dot net,.NET
+dotnet,.NET
+agil,Agile
+agile,Agile
+metodologias agiles,Agile
+metodologías ágiles,Agile
+ágil,Agile
+airflow,Airflow
+apache airflow,Airflow
+android,Android
+angular,Angular
+angular 2+,Angular
+angular.js,Angular
+angularjs,Angular
+ansible,Ansible
+amazon web services,AWS
+aws,AWS
+azure,Azure
+microsoft azure,Azure
+bash,Bash
+bash scripting,Bash
+shell,Bash
+shell scripting,Bash
+big query,BigQuery
+bigquery,BigQuery
+google bigquery,BigQuery
+c,C
+c sharp,C#
+c#,C#
+csharp,C#
+c plus plus,C++
+c++,C++
+cpp,C++
+apache cassandra,Cassandra
+cassandra,Cassandra
+ci cd,CI/CD
+ci/cd,CI/CD
+cicd,CI/CD
+integración continua,CI/CD
+cobol,COBOL
+css,CSS
+css3,CSS
+sass,CSS
+scss,CSS
+cypress,Cypress
+dart,Dart
+databricks,Databricks
+data build tool,dbt
+dbt,dbt
+dbt cloud,dbt
+dbt core,dbt
+dbt-core,dbt
+deep learning,Deep Learning
+django,Django
+docker,Docker
+duckdb,DuckDB
+amazon dynamodb,DynamoDB
+dynamodb,DynamoDB
+elastic,Elasticsearch
+elastic search,Elasticsearch
+elasticsearch,Elasticsearch
+elk,Elasticsearch
+opensearch,Elasticsearch
+elt,ETL
+etl,ETL
+etl/elt,ETL
+excel,Excel
+microsoft excel,Excel
+ms excel,Excel
+express,Express
+express.js,Express
+expressjs,Express
+fast api,FastAPI
+fastapi,FastAPI
+flask,Flask
+flutter,Flutter
+gcp,GCP
+google cloud,GCP
+google cloud platform,GCP
+bitbucket,Git
+git,Git
+github,Git
+gitlab,Git
+github actions,GitHub Actions
+gitlab ci,GitLab CI
+gitlab ci/cd,GitLab CI
+gitlab-ci,GitLab CI
+go,Go
+golang,Go
+grafana,Grafana
+graphql,GraphQL
+grpc,gRPC
+apache hadoop,Hadoop
+hadoop,Hadoop
+hdfs,Hadoop
+helm,Helm
+html,HTML
+html5,HTML
+ios,iOS
+java,Java
+java 11,Java
+java 17,Java
+java 21,Java
+java 8,Java
+ecmascript,JavaScript
+es6,JavaScript
+javascript,JavaScript
+javascript es6,JavaScript
+js,JavaScript
+jenkins,Jenkins
+jest,Jest
+jira,Jira
+junit,JUnit
+apache kafka,Kafka
+kafka,Kafka
+kotlin,Kotlin
+k8s,Kubernetes
+kubernetes,Kubernetes
+langchain,LangChain
+laravel,Laravel
+linux,Linux
+unix,Linux
+genai,LLM
+generative ai,LLM
+ia generativa,LLM
+large language models,LLM
+llm,LLM
+llms,LLM
+looker,Looker
+looker studio,Looker
+aprendizaje automático,Machine Learning
+machine learning,Machine Learning
+ml,Machine Learning
+mariadb,MariaDB
+arquitectura de microservicios,Microservicios
+microservices,Microservicios
+microservicios,Microservicios
+mlops,MLOps
+mongo,MongoDB
+mongodb,MongoDB
+mysql,MySQL
+nest,NestJS
+nest.js,NestJS
+nestjs,NestJS
+next,Next.js
+next.js,Next.js
+nextjs,Next.js
+node,Node.js
+node js,Node.js
+node.js,Node.js
+nodejs,Node.js
+numpy,NumPy
+oracle,Oracle
+oracle database,Oracle
+oracle db,Oracle
+pandas,pandas
+php,PHP
+php 8,PHP
+php8,PHP
+postgre,PostgreSQL
+postgres,PostgreSQL
+postgresql,PostgreSQL
+postgresql 15,PostgreSQL
+power bi,Power BI
+power-bi,Power BI
+powerbi,Power BI
+powershell,PowerShell
+prometheus,Prometheus
+pytest,pytest
+python,Python
+python 3,Python
+python3,Python
+pytorch,PyTorch
+torch,PyTorch
+lenguaje r,R
+r,R
+r language,R
+rabbitmq,RabbitMQ
+react,React
+react js,React
+react.js,React
+reactjs,React
+react native,React Native
+react-native,React Native
+redis,Redis
+amazon redshift,Redshift
+aws redshift,Redshift
+redshift,Redshift
+redux,Redux
+api rest,REST
+apis rest,REST
+rest,REST
+rest api,REST
+restful,REST
+ruby,Ruby
+rails,Ruby on Rails
+ror,Ruby on Rails
+ruby on rails,Ruby on Rails
+rust,Rust
+salesforce,Salesforce
+sap,SAP
+sap hana,SAP
+sap s/4hana,SAP
+scala,Scala
+scikit learn,scikit-learn
+scikit-learn,scikit-learn
+sklearn,scikit-learn
+scrum,Scrum
+selenium,Selenium
+snowflake,Snowflake
+apache spark,Spark
+pyspark,Spark
+spark,Spark
+spark sql,Spark
+spring,Spring
+spring boot,Spring
+spring framework,Spring
+springboot,Spring
+ansi sql,SQL
+pl/sql,SQL
+plsql,SQL
+sql,SQL
+t-sql,SQL
+tsql,SQL
+microsoft sql server,SQL Server
+ms sql server,SQL Server
+mssql,SQL Server
+sql server,SQL Server
+sqlite,SQLite
+svelte,Svelte
+sveltekit,Svelte
+swift,Swift
+symfony,Symfony
+tableau,Tableau
+tailwind,Tailwind CSS
+tailwind css,Tailwind CSS
+tailwindcss,Tailwind CSS
+tensorflow,TensorFlow
+terraform,Terraform
+ts,TypeScript
+typescript,TypeScript
+vue,Vue.js
+vue 3,Vue.js
+vue.js,Vue.js
+vuejs,Vue.js

@@ -70,3 +70,25 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 - Looker Studio: requiere conectores específicos y cuenta de Google Cloud.
 
 **Consecuencias**: Requiere más código propio que una herramienta de BI, pero permite total control sobre la interacción y demuestra capacidad de construir la capa de presentación además del pipeline de datos.
+
+---
+
+## ADR-006: API de Adzuna como fuente de ofertas, en lugar de scraping
+
+**Contexto**: El pipeline necesita una fuente periódica y estable de ofertas de empleo tech. Las reglas del proyecto exigen, además, respetar `robots.txt`, limitar la frecuencia de peticiones, cachear en disco y reintentar con backoff exponencial.
+
+**Decisión**: Obtener las ofertas de la API pública de [Adzuna](https://developer.adzuna.com/) (endpoint `jobs/{país}/search`), con España (`es`) como mercado por defecto. Las credenciales (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`) se leen de variables de entorno y en Actions se inyectan como secrets.
+
+**Alternativas consideradas**:
+- Scraping con `requests` + BeautifulSoup de un portal de empleo: descartado. Hace depender el pipeline de `robots.txt` y de las condiciones de cada portal, que pueden prohibir el rastreo en cualquier momento, y de la estructura HTML, que cambia sin aviso y rompe el parser en silencio. Además, obliga a mantener selectores por cada fuente.
+- Otras APIs de empleo: muchas exigen acuerdos comerciales o no cubren el mercado español con suficiente volumen.
+
+**Consecuencias**:
+- Datos estructurados y estables (id, título, empresa, fecha, ubicación, categoría), sin mantenimiento de parsers.
+- Límites del plan gratuito: 25 peticiones/minuto, 250/día y 1000/semana. La ingesta limita el número de páginas por ejecución y espacia las peticiones.
+- Los términos de uso permiten la investigación personal y exigen citar a Adzuna como fuente allí donde se publiquen los datos: el dashboard debe incluir esa atribución.
+- `robots.txt`: `api.adzuna.com/robots.txt` prohíbe el rastreo a todos los agentes (`Disallow: /`). Se interpreta que `robots.txt` regula el rastreo de páginas web y no el acceso a una API oficial con credenciales, que se rige por sus términos de uso; se mantienen igualmente el límite de frecuencia, la caché en disco y los reintentos con backoff (ver `coding-rules.md`).
+- La API devuelve solo los primeros 500 caracteres de la descripción, lo que puede reducir las tecnologías que detecta el LLM. Si resulta ser un problema, se valorará complementar con una segunda fuente (registrándolo en un ADR nuevo).
+- Alcance por defecto de cada ejecución: categoría `it-jobs`, ofertas de los últimos 7 días, hasta 5 páginas de 50 resultados (unas 250 ofertas en 5 peticiones), ajustable por línea de comandos.
+- Las URLs de las ofertas se guardan sin parámetros de seguimiento (`utm_*`), que incluyen el identificador de la aplicación; la base se publica como artefacto de Actions.
+- Los salarios que publica Adzuna se guardan aparte en `raw_ofertas` (`salario_min_anunciado`, `salario_max_anunciado`), pero los marts usan solo el salario extraído por el LLM del texto de la oferta, para no mezclar estimaciones con datos explícitos.

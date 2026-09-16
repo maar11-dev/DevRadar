@@ -1,0 +1,2 @@
+# Sin paquetes externos por ahora: los tests usan solo los genéricos de dbt-core.
+packages: []

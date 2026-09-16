@@ -15,7 +15,7 @@ pip install -r requirements.txt
 # Ejecutar el pipeline completo en local
 python src/ingest.py
 python src/extract.py
-cd dbt_project && dbt run && dbt test
+cd dbt_project && dbt build   # seed + run + test
 
 # Levantar el dashboard
 streamlit run dashboard/app.py

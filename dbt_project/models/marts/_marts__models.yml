@@ -1,0 +1,80 @@
+version: 2
+
+models:
+  - name: demanda_tecnologias_mensual
+    description: >
+      Número y porcentaje de ofertas clasificadas que mencionan cada
+      tecnología, por mes de publicación.
+    columns:
+      - name: id_tecnologia_mes
+        description: Clave sustituta "tecnologia|YYYY-MM".
+        data_tests:
+          - not_null
+          - unique
+      - name: tecnologia
+        data_tests:
+          - not_null
+      - name: mes
+        description: Primer día del mes de publicación.
+        data_tests:
+          - not_null
+      - name: num_ofertas
+        data_tests:
+          - not_null
+      - name: total_ofertas_mes
+        description: Ofertas clasificadas publicadas ese mes (denominador).
+        data_tests:
+          - not_null
+      - name: pct_ofertas
+        description: Porcentaje (0-100) de ofertas del mes que piden la tecnología.
+        data_tests:
+          - not_null
+
+  - name: salarios_por_tecnologia
+    description: >
+      Salario medio y mediano por tecnología y mes, solo con ofertas que
+      publican salario. El salario de cada oferta es el punto medio del rango
+      (o el único extremo disponible).
+    columns:
+      - name: id_tecnologia_mes
+        description: Clave sustituta "tecnologia|YYYY-MM".
+        data_tests:
+          - not_null
+          - unique
+      - name: tecnologia
+        data_tests:
+          - not_null
+      - name: mes
+        data_tests:
+          - not_null
+      - name: num_ofertas_con_salario
+        data_tests:
+          - not_null
+      - name: salario_medio
+      - name: salario_mediano
+
+  - name: tendencia_modalidad
+    description: >
+      Número y porcentaje de ofertas por modalidad de trabajo y mes, sobre las
+      ofertas cuya modalidad se ha podido inferir.
+    columns:
+      - name: id_modalidad_mes
+        description: Clave sustituta "modalidad|YYYY-MM".
+        data_tests:
+          - not_null
+          - unique
+      - name: modalidad
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["remoto", "hibrido", "presencial"]
+      - name: mes
+        data_tests:
+          - not_null
+      - name: num_ofertas
+        data_tests:
+          - not_null
+      - name: pct_ofertas
+        data_tests:
+          - not_null
