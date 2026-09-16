@@ -1,4 +1,5 @@
 """Fixtures compartidas entre tests unitarios e de integración."""
+
 import pytest
 
 

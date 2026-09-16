@@ -2,6 +2,7 @@
 
 Ejecutar con: pytest tests/unitario
 """
+
 from src.normalize import normalizar_tecnologias
 
 
