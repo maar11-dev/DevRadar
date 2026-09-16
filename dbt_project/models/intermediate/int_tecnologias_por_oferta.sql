@@ -31,4 +31,6 @@ select distinct
     tecnologias_detectadas.fecha_publicacion
 from tecnologias_detectadas
 inner join catalogo
-    on lower(trim(tecnologias_detectadas.tecnologia_detectada)) = catalogo.variante
+    -- Misma normalización de la clave que load_catalog() en src/normalize.py.
+    on lower(regexp_replace(trim(tecnologias_detectadas.tecnologia_detectada), '\s+', ' ', 'g'))
+        = catalogo.variante

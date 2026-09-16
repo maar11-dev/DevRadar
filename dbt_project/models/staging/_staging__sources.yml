@@ -26,7 +26,9 @@ models:
     description: >
       Una fila por oferta limpia y deduplicada, enriquecida con los campos
       extraídos por el LLM (último intento sin error). Las ofertas aún no
-      clasificadas aparecen con los campos del LLM a null.
+      clasificadas aparecen con los campos del LLM a null. Los anuncios con el
+      mismo título y empresa en el mismo mes cuentan como una sola oferta
+      (ADR-011).
     columns:
       - name: id_oferta
         description: Identificador de la oferta en la fuente.
@@ -36,7 +38,10 @@ models:
       - name: fecha_publicacion
         description: Fecha de publicación de la oferta.
       - name: tecnologias
-        description: Tecnologías normalizadas detectadas por el LLM.
+        description: >
+          Tecnologías tal como las devuelve el LLM (sin normalizar); la
+          normalización contra el catálogo se hace en int_tecnologias_por_oferta
+          (ADR-009).
       - name: seniority
         data_tests:
           - accepted_values:
@@ -47,7 +52,15 @@ models:
           - accepted_values:
               arguments:
                 values: ["remoto", "hibrido", "presencial"]
+      - name: fuente_salario
+        description: >
+          Origen del salario: 'llm' si aparece en el texto de la oferta,
+          'adzuna' si lo publica Adzuna en un rango anual plausible (ADR-010).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["llm", "adzuna"]
       - name: salario_min
-        description: Salario anual bruto mínimo (EUR), si aparece en la oferta.
+        description: Salario anual bruto mínimo (EUR), según fuente_salario.
       - name: salario_max
-        description: Salario anual bruto máximo (EUR), si aparece en la oferta.
+        description: Salario anual bruto máximo (EUR), según fuente_salario.

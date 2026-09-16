@@ -9,6 +9,10 @@ on:
         description: 'Fallar a propósito al inicio (sin llamar a Adzuna ni a Groq) para probar el aviso por issue'
         type: boolean
         default: false
+      reclasificar_sin_tecnologias:
+        description: 'Volver a clasificar con el prompt actual las ofertas sin tecnologías de prompts anteriores (consume cuota de Groq)'
+        type: boolean
+        default: false
 
 # Permisos mínimos del GITHUB_TOKEN: publicar en la rama `data` y abrir una
 # issue si la ejecución falla.
@@ -70,7 +74,14 @@ jobs:
         run: python src/ingest.py
 
       - name: Extraer datos estructurados con el LLM
-        run: python src/extract.py
+        env:
+          RECLASIFICAR: ${{ inputs.reclasificar_sin_tecnologias }}
+        run: |
+          if [ "$RECLASIFICAR" = "true" ]; then
+            python src/extract.py --reclasificar-sin-tecnologias
+          else
+            python src/extract.py
+          fi
 
       - name: dbt seed (catálogo de tecnologías)
         run: dbt seed

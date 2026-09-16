@@ -29,6 +29,7 @@ shell scripting,Bash
 big query,BigQuery
 bigquery,BigQuery
 google bigquery,BigQuery
+blockchain,Blockchain
 c,C
 c sharp,C#
 c#,C#
@@ -42,6 +43,13 @@ ci cd,CI/CD
 ci/cd,CI/CD
 cicd,CI/CD
 integración continua,CI/CD
+cloud,Cloud
+cloud computing,Cloud
+cloud native,Cloud
+cloud-native,Cloud
+iaas,Cloud
+nube,Cloud
+paas,Cloud
 cobol,COBOL
 css,CSS
 css3,CSS
@@ -49,6 +57,8 @@ sass,CSS
 scss,CSS
 cypress,Cypress
 dart,Dart
+ciencia de datos,Data Science
+data science,Data Science
 databricks,Databricks
 data build tool,dbt
 dbt,dbt
@@ -56,6 +66,8 @@ dbt cloud,dbt
 dbt core,dbt
 dbt-core,dbt
 deep learning,Deep Learning
+devops,DevOps
+devsecops,DevSecOps
 django,Django
 docker,Docker
 duckdb,DuckDB
@@ -79,6 +91,7 @@ fast api,FastAPI
 fastapi,FastAPI
 flask,Flask
 flutter,Flutter
+freertos,FreeRTOS
 gcp,GCP
 google cloud,GCP
 google cloud platform,GCP
@@ -101,6 +114,14 @@ hdfs,Hadoop
 helm,Helm
 html,HTML
 html5,HTML
+ai,IA
+artificial intelligence,IA
+ia,IA
+inteligencia artificial,IA
+iac,IaC
+infraestructura como codigo,IaC
+infraestructura como código,IaC
+infrastructure as code,IaC
 ios,iOS
 java,Java
 java 11,Java
@@ -123,14 +144,22 @@ k8s,Kubernetes
 kubernetes,Kubernetes
 langchain,LangChain
 laravel,Laravel
+embedded linux,Linux
 linux,Linux
+linux embebido,Linux
 unix,Linux
+agentes de ia,LLM
+agentic ai,LLM
+ai agents,LLM
 genai,LLM
 generative ai,LLM
+ia agentica,LLM
+ia agéntica,LLM
 ia generativa,LLM
 large language models,LLM
 llm,LLM
 llms,LLM
+rag,LLM
 looker,Looker
 looker studio,Looker
 aprendizaje automático,Machine Learning
@@ -140,6 +169,11 @@ mariadb,MariaDB
 arquitectura de microservicios,Microservicios
 microservices,Microservicios
 microservicios,Microservicios
+d365,Microsoft Dynamics 365
+dynamics 365,Microsoft Dynamics 365
+microsoft dynamics,Microsoft Dynamics 365
+microsoft dynamics 365,Microsoft Dynamics 365
+microsoft dynamics 365 f&o,Microsoft Dynamics 365
 mlops,MLOps
 mongo,MongoDB
 mongodb,MongoDB
@@ -169,6 +203,10 @@ postgresql 15,PostgreSQL
 power bi,Power BI
 power-bi,Power BI
 powerbi,Power BI
+microsoft power platform,Power Platform
+power apps,Power Platform
+power automate,Power Platform
+power platform,Power Platform
 powershell,PowerShell
 prometheus,Prometheus
 pytest,pytest
@@ -187,6 +225,12 @@ react.js,React
 reactjs,React
 react native,React Native
 react-native,React Native
+2g,Redes móviles (2G-5G)
+3g,Redes móviles (2G-5G)
+4g,Redes móviles (2G-5G)
+5g,Redes móviles (2G-5G)
+lte,Redes móviles (2G-5G)
+redes móviles (2g-5g),Redes móviles (2G-5G)
 redis,Redis
 amazon redshift,Redshift
 aws redshift,Redshift
@@ -197,15 +241,21 @@ apis rest,REST
 rest,REST
 rest api,REST
 restful,REST
+rtos,RTOS
 ruby,Ruby
 rails,Ruby on Rails
 ror,Ruby on Rails
 ruby on rails,Ruby on Rails
 rust,Rust
 salesforce,Salesforce
+s/4hana,SAP
 sap,SAP
+sap btp,SAP
 sap hana,SAP
+sap mm,SAP
 sap s/4hana,SAP
+sap s4hana,SAP
+sap sd,SAP
 scala,Scala
 scikit learn,scikit-learn
 scikit-learn,scikit-learn
@@ -242,9 +292,14 @@ tailwind css,Tailwind CSS
 tailwindcss,Tailwind CSS
 tensorflow,TensorFlow
 terraform,Terraform
+togaf,TOGAF
 ts,TypeScript
 typescript,TypeScript
 vue,Vue.js
 vue 3,Vue.js
 vue.js,Vue.js
 vuejs,Vue.js
+yocto,Yocto
+yocto project,Yocto
+zephyr,Zephyr
+zephyr rtos,Zephyr

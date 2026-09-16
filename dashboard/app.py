@@ -482,7 +482,7 @@ def main() -> None:
         salarios = marts["salarios_por_tecnologia"]
         salarios = salarios[salarios["mes"].dt.date.between(desde, hasta)]
         if salarios.empty:
-            st.info("Ninguna oferta del periodo publica salario explícito.")
+            st.info("Ninguna oferta del periodo tiene un salario anual utilizable.")
         else:
             resumen = (
                 salarios.groupby("tecnologia", as_index=False)
@@ -504,7 +504,8 @@ def main() -> None:
                 width="stretch",
             )
             st.caption(
-                "Mediana de las medianas mensuales; solo ofertas con salario explícito."
+                "Mediana de las medianas mensuales. Salario del texto de la oferta o, si no "
+                "aparece, el publicado por Adzuna entre 15.000 y 300.000 €/año (ADR-010)."
             )
 
     # --- Calidad de la extracción ---

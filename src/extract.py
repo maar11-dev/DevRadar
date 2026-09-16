@@ -35,6 +35,9 @@ LLM_TIMEOUT_SECONDS = 60
 # El plan gratuito de Groq limita a 8000 tokens/minuto y cada oferta consume
 # unos 550: 6 s entre llamadas (~10/min) deja margen.
 SECONDS_BETWEEN_CALLS = 6.0
+# Se guarda con cada clasificación; incrementarla al cambiar PROMPT_TEMPLATE de
+# forma que merezca reclasificar ofertas antiguas (ADR-009).
+PROMPT_VERSION = "2"
 
 SENIORITY_ALIASES = {
     "junior": "junior",
@@ -64,7 +67,7 @@ SYSTEM_PROMPT = (
 
 PROMPT_TEMPLATE = """Analiza la siguiente oferta de empleo y devuelve un objeto JSON con exactamente estas claves:
 
-- "tecnologias": lista de tecnologías, lenguajes, frameworks, bases de datos, herramientas o plataformas mencionadas, con su nombre habitual (p. ej. "Python", "React", "AWS"). Lista vacía si no hay ninguna.
+- "tecnologias": lista de tecnologías, lenguajes, frameworks, bases de datos, herramientas o plataformas mencionadas, con su nombre habitual (p. ej. "Python", "React", "AWS"). Revisa también el título: si nombra una tecnología o disciplina técnica, inclúyela (p. ej. "Machine Learning Engineer" → "Machine Learning", "Consultor SAP" → "SAP", "Líder de IA Generativa" → "IA generativa"). Incluye disciplinas técnicas concretas como "Machine Learning", "IA", "Cloud" o "DevOps", pero no habilidades blandas, idiomas, sectores ni nombres de empresas. Lista vacía si no hay ninguna.
 - "seniority": "junior", "mid" o "senior" si se puede inferir; null si no.
 - "modalidad": "remoto", "hibrido" o "presencial" si se puede inferir; null si no.
 - "salario_min": salario anual bruto mínimo en euros como número, solo si aparece explícito; null si no.
@@ -286,7 +289,9 @@ def extraer_datos_oferta(oferta: dict) -> dict:
 
 
 def clasificar_ofertas_pendientes(
-    con: duckdb.DuckDBPyConnection, limit: int | None = None
+    con: duckdb.DuckDBPyConnection,
+    limit: int | None = None,
+    reclasificar_sin_tecnologias: bool = False,
 ) -> tuple[int, int]:
     """Clasifica las ofertas de ``raw_ofertas`` que aún no tienen extracción válida.
 
@@ -296,6 +301,9 @@ def clasificar_ofertas_pendientes(
     Args:
         con: Conexión DuckDB con permisos de escritura.
         limit: Máximo de ofertas a procesar (``None`` para todas).
+        reclasificar_sin_tecnologias: Si es ``True``, procesa además las ofertas
+            cuya última extracción correcta no devolvió ninguna tecnología y se
+            hizo con una versión anterior del prompt (``PROMPT_VERSION``).
 
     Returns:
         Tupla ``(procesadas, con_error)``.
@@ -306,18 +314,39 @@ def clasificar_ofertas_pendientes(
     """
     create_raw_tables(con)
     query = """
+        with ultima_correcta as (
+            select
+                id_oferta,
+                coalesce(
+                    len(try_cast(json_extract(
+                        try_cast(respuesta_llm as json), '$.tecnologias'
+                    ) as varchar[])),
+                    len(tecnologias)
+                ) as num_tecnologias,
+                version_prompt
+            from raw_ofertas_clasificadas
+            where error is null
+            qualify row_number() over (
+                partition by id_oferta order by fecha_extraccion desc
+            ) = 1
+        )
         select cast(o.id as varchar), o.titulo, o.descripcion
         from raw_ofertas as o
-        where not exists (
-            select 1
-            from raw_ofertas_clasificadas as c
-            where c.id_oferta = cast(o.id as varchar) and c.error is null
-        )
+        left join ultima_correcta as c
+            on c.id_oferta = cast(o.id as varchar)
+        where c.id_oferta is null
+            or (
+                ?
+                and coalesce(c.num_tecnologias, 0) = 0
+                and coalesce(c.version_prompt, '1') <> ?
+            )
         order by o.fecha_publicacion desc nulls last
     """
     if limit is not None:
         query += f" limit {int(limit)}"
-    pending = con.execute(query).fetchall()
+    pending = con.execute(
+        query, [reclasificar_sin_tecnologias, PROMPT_VERSION]
+    ).fetchall()
 
     provider = _get_provider() if pending else None
     model = _get_model(provider) if provider else None
@@ -336,8 +365,8 @@ def clasificar_ofertas_pendientes(
             insert into raw_ofertas_clasificadas (
                 id_oferta, tecnologias, seniority, modalidad, salario_min,
                 salario_max, error, respuesta_llm, proveedor_llm, modelo_llm,
-                fecha_extraccion
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fecha_extraccion, version_prompt
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 id_oferta,
@@ -351,6 +380,7 @@ def clasificar_ofertas_pendientes(
                 provider,
                 model,
                 datetime.now(timezone.utc).replace(tzinfo=None),
+                PROMPT_VERSION,
             ],
         )
 
@@ -368,13 +398,22 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, default=None, help="máximo de ofertas a procesar"
     )
+    parser.add_argument(
+        "--reclasificar-sin-tecnologias",
+        action="store_true",
+        help="volver a clasificar las ofertas sin tecnologías de un prompt anterior",
+    )
     args = parser.parse_args()
 
     load_dotenv()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     with connect() as con:
-        clasificar_ofertas_pendientes(con, limit=args.limit)
+        clasificar_ofertas_pendientes(
+            con,
+            limit=args.limit,
+            reclasificar_sin_tecnologias=args.reclasificar_sin_tecnologias,
+        )
 
 
 if __name__ == "__main__":

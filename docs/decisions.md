@@ -141,3 +141,61 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 - **Riesgo conocido: tamaño.** Git no está pensado para binarios grandes y cada cambio guarda una versión nueva del archivo en el historial de `data`. Medido en local, la base compacta ocupa ~1,8 MB con 50 ofertas; la de la primera ejecución en Actions (250 ofertas) ocupaba 136 KB comprimida en el artefacto. Git guarda los objetos comprimidos, así que cada versión añade al historial una fracción del tamaño real. A este tamaño no hay problema, pero el archivo crecerá cada semana con el histórico. **Si la base supera unos pocos MB (orientativamente, 10 MB), habrá que migrar a un bucket o a Git LFS**, o reescribir la historia de `data` para conservar solo la última versión, y registrarlo en un ADR nuevo.
 - El dashboard muestra datos con hasta una hora de retraso respecto a la última publicación (caché de la descarga); como el pipeline es semanal, es suficiente.
 - La primera vez hay que conectar Streamlit Community Cloud con el repositorio a mano (ver README): no se puede automatizar desde el workflow.
+
+---
+
+## ADR-009: Normalización de tecnologías en dbt a partir de la respuesta cruda del LLM
+
+**Contexto**: Tras la primera carga real, el 74,8 % de las ofertas (187 de 250) no tenía ninguna tecnología detectada. Una revisión manual y sistemática de esas ofertas mostró tres causas: la mayoría son extractos de 500 caracteres que no nombran ninguna tecnología (límite de Adzuna, ADR-006/ADR-007); en 18 el título sí nombraba una tecnología del catálogo que el LLM no extrajo (p. ej. «Machine Learning Engineer», «Consultor Senior SAP»); y en 29 el LLM devolvió términos válidos que no estaban en el catálogo (`AI`/`IA`, `cloud`, `Yocto`, `Embedded Linux`, `RAG`, `TOGAF`…). Como la normalización se hacía en Python antes de guardar, ampliar el catálogo no recuperaba las ofertas ya clasificadas.
+
+**Decisión**:
+- `stg_ofertas` toma la lista de tecnologías de la respuesta cruda del LLM (`respuesta_llm`), y `int_tecnologias_por_oferta` la normaliza contra el seed `catalogo_tecnologias`. Cualquier cambio del catálogo se aplica a todas las ofertas en el siguiente `dbt build`, sin volver a llamar al LLM. Si la respuesta guardada no es JSON válido, se usa la lista normalizada en Python (que se mantiene para `extraer_datos_oferta`).
+- Se amplía el catálogo con los huecos frecuentes (IA, Cloud, Data Science, DevOps, DevSecOps, IaC, Yocto, Zephyr, TOGAF, Microsoft Dynamics 365, redes móviles, variantes de SAP y de LLM, entre otros).
+- El prompt pide explícitamente las tecnologías y disciplinas técnicas que aparezcan en el título. Cada clasificación guarda la versión del prompt (`version_prompt`, hoy `2`).
+- `src/extract.py --reclasificar-sin-tecnologias` (y la opción `reclasificar_sin_tecnologias` del workflow) vuelve a clasificar las ofertas cuya última extracción correcta no devolvió ninguna tecnología con un prompt anterior. Como se guarda la versión, relanzarlo no repite llamadas.
+
+**Alternativas consideradas**:
+- Solo ampliar el catálogo y el prompt: mejora las ofertas nuevas, pero las ya procesadas se quedarían como están.
+- Buscar tecnologías del catálogo en el título con expresiones regulares: barato, pero con falsos positivos en variantes cortas o ambiguas (`go`, `next`, `node`, `r`), y no captura sinónimos.
+- Aceptar el 75 % como límite de la fuente: la revisión mostró que una parte importante era recuperable.
+
+**Consecuencias**:
+- Medido sobre las 250 ofertas reales: solo con dbt y el catálogo nuevo, el porcentaje sin tecnologías baja al 65,5 %. En una muestra de 20 ofertas vacías, el prompt nuevo recupera tecnologías en la mitad; tras reclasificar se espera alrededor de un 35-40 %. El resto son extractos que de verdad no nombran tecnologías.
+- La tabla `raw_ofertas_clasificadas` gana la columna `version_prompt`; `create_raw_tables` la añade a las bases restauradas desde la rama `data`.
+- Al cambiar el prompt de forma relevante hay que incrementar `PROMPT_VERSION` y lanzar la reclasificación, que consume cuota de Groq (unas 6,5 s por oferta, dentro del límite de 1.000 peticiones al día si se lanza con unos cientos de ofertas pendientes).
+
+---
+
+## ADR-010: Salario publicado por Adzuna, solo en rango anual plausible
+
+**Contexto**: El LLM solo encontró salario en 2 de 250 ofertas, porque los extractos de 500 caracteres casi nunca lo incluyen. Adzuna, en cambio, publica `salary_min`/`salary_max` en 222 de 250 ofertas, pero con unidades mezcladas: hay importes por hora (57), mensuales (1.200-4.900) y anuales (75.000-260.000), sin ningún campo que indique la unidad.
+
+**Decisión**: `stg_ofertas` usa el salario de Adzuna solo si está entre 15.000 y 300.000 €, rango que se interpreta como anual bruto; los valores fuera de rango se descartan. Si el LLM extrajo un salario del texto, tiene prioridad. La columna `fuente_salario` indica el origen (`llm` o `adzuna`), y un test singular de dbt comprueba el rango.
+
+**Alternativas consideradas**:
+- Convertir por heurística (por hora ×1.800, mensual ×12): más datos, pero con errores de unidades probables (en España es habitual cobrar en 14 pagas) y sin forma de validarlos.
+- No usar el salario de Adzuna: la sección de salarios del dashboard quedaría vacía.
+
+**Consecuencias**:
+- Sobre los datos reales, 193 de las 232 ofertas únicas pasan a tener salario, y `salarios_por_tecnologia` deja de estar vacío.
+- El rango descarta salarios anuales reales por debajo de 15.000 € (becas, media jornada) y podría aceptar algún importe no anual que caiga dentro. Adzuna marca todos estos salarios como no estimados (`salary_is_predicted = 0`), pero no hay forma de comprobar su origen: conviene revisar una muestra cuando haya más histórico.
+- Los términos de Adzuna exigen citarla como fuente de los datos salariales; el dashboard ya lo hace.
+
+---
+
+## ADR-011: Deduplicación de anuncios repetidos y 10 páginas de Adzuna por ejecución
+
+**Contexto**: En la primera carga había 18 anuncios repetidos (mismo título y empresa, normalmente la misma oferta publicada en varias ciudades con distinto id), que inflaban los recuentos. Además, con 5 páginas por ejecución (ADR-006) se descargaban 250 de las ~785 ofertas que Adzuna tenía en los últimos 7 días.
+
+**Decisión**:
+- `stg_ofertas` se queda con una sola oferta por (título, empresa, mes de publicación), priorizando la que tiene tecnologías detectadas. Las ofertas sin título o sin empresa no se deduplican.
+- La ingesta descarga 10 páginas por ejecución (unas 500 ofertas). Esto sustituye al valor de 5 páginas de ADR-006; el resto de ese ADR sigue vigente.
+
+**Alternativas consideradas**:
+- No deduplicar: cada ciudad contaría como una oferta distinta.
+- 16 páginas (casi todo el mercado semanal): unos 90 minutos por ejecución y cerca del límite diario de Groq si hay reintentos.
+- Mantener 5 páginas: se perdían dos tercios de las ofertas.
+
+**Consecuencias**:
+- Se pierde la ubicación de las copias descartadas (hoy no se usa en ningún mart).
+- Con la restauración de ADR-008 solo se clasifican las ofertas nuevas: unas 500 por semana, alrededor de 55 minutos por ejecución, dentro del límite de 1.000 peticiones al día de Groq.

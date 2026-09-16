@@ -3,9 +3,10 @@ version: 2
 models:
   - name: int_tecnologias_por_oferta
     description: >
-      Una fila por combinación (oferta, tecnología). Las tecnologías se vuelven
-      a validar contra el seed catalogo_tecnologias, de modo que solo llegan a
-      los marts nombres canónicos.
+      Una fila por combinación (oferta, tecnología). Normaliza la lista cruda
+      del LLM contra el seed catalogo_tecnologias, de modo que solo llegan a
+      los marts nombres canónicos y los cambios del catálogo se aplican a todas
+      las ofertas en el siguiente dbt build (ADR-009).
     columns:
       - name: id_oferta_tecnologia
         description: Clave sustituta "id_oferta|tecnologia".

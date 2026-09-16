@@ -27,22 +27,22 @@ Obtiene ofertas de empleo de la fuente configurada (API o scraping respetuoso: `
 
 ### 2. Extracción de entidades con LLM (`src/extract.py`)
 Cada oferta pasa por un LLM (Groq por defecto; Ollama local soportado como alternativa para desarrollo offline) con un prompt estructurado que devuelve JSON con:
-- Tecnologías mencionadas (normalizadas contra un catálogo controlado)
+- Tecnologías mencionadas en el título o la descripción (dbt las normaliza después contra el catálogo controlado, ver ADR-009)
 - Nivel de seniority (junior / mid / senior, si es inferible)
 - Modalidad (remoto / híbrido / presencial)
 - Rango salarial, si aparece explícito
 
-El resultado se guarda como `raw_ofertas_clasificadas`, manteniendo también el JSON crudo del LLM por si se necesita reprocesar con un prompt mejorado sin volver a llamar a la API.
+El resultado se guarda como `raw_ofertas_clasificadas`, manteniendo también el JSON crudo del LLM (del que dbt toma la lista de tecnologías) y la versión del prompt usada. Con `--reclasificar-sin-tecnologias` se vuelven a procesar las ofertas sin tecnologías de prompts anteriores.
 
 ### 3. Transformación con dbt (`dbt_project/`)
 
 Estructura en tres capas, siguiendo convención estándar de dbt:
 
-- **`staging`** (`stg_ofertas`): limpieza básica — normalización de fechas, deduplicado por ID de oferta, tipado de columnas.
-- **`intermediate`** (`int_tecnologias_por_oferta`): "explota" el array de tecnologías detectadas por oferta en una fila por combinación (oferta, tecnología), facilitando agregaciones posteriores.
+- **`staging`** (`stg_ofertas`): limpieza básica — normalización de fechas, tipado de columnas, deduplicado por ID de oferta y de anuncios repetidos con el mismo título y empresa (ADR-011), lista cruda de tecnologías del LLM (ADR-009) y salario del LLM o, si no hay, el de Adzuna en rango anual plausible (ADR-010).
+- **`intermediate`** (`int_tecnologias_por_oferta`): "explota" el array de tecnologías detectadas por oferta en una fila por combinación (oferta, tecnología) y lo normaliza contra el seed `catalogo_tecnologias`, de modo que los cambios del catálogo se aplican a todas las ofertas en el siguiente `dbt build`.
 - **`marts`**:
   - `demanda_tecnologias_mensual`: nº y % de ofertas que mencionan cada tecnología, por mes (el % se calcula sobre las ofertas con al menos una tecnología detectada, ver ADR-007).
-  - `salarios_por_tecnologia`: media/mediana salarial cuando el dato existe.
+  - `salarios_por_tecnologia`: media/mediana salarial cuando el dato existe (extraído por el LLM o publicado por Adzuna, ver ADR-010).
   - `tendencia_modalidad`: evolución de remoto/híbrido/presencial en el tiempo.
   - `cobertura_extraccion_mensual`: ofertas clasificadas y % sin ninguna tecnología detectada, por mes.
 

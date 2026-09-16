@@ -38,9 +38,16 @@ create table if not exists raw_ofertas_clasificadas (
     respuesta_llm varchar,
     proveedor_llm varchar,
     modelo_llm varchar,
-    fecha_extraccion timestamp not null
+    fecha_extraccion timestamp not null,
+    version_prompt varchar
 )
 """
+
+# Columnas añadidas después de la primera publicación de la base: las bases
+# restauradas desde la rama `data` no las tienen (ADR-009).
+RAW_MIGRATIONS = (
+    "alter table raw_ofertas_clasificadas add column if not exists version_prompt varchar",
+)
 
 
 def get_db_path() -> Path:
@@ -72,10 +79,12 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
 
 
 def create_raw_tables(con: duckdb.DuckDBPyConnection) -> None:
-    """Crea las tablas crudas si todavía no existen.
+    """Crea las tablas crudas si todavía no existen y añade columnas nuevas.
 
     Args:
         con: Conexión DuckDB con permisos de escritura.
     """
     con.execute(RAW_OFERTAS_DDL)
     con.execute(RAW_OFERTAS_CLASIFICADAS_DDL)
+    for migration in RAW_MIGRATIONS:
+        con.execute(migration)

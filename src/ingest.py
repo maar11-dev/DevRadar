@@ -35,7 +35,7 @@ FUENTE = "adzuna"
 
 DEFAULT_COUNTRY = "es"
 DEFAULT_CATEGORY = "it-jobs"
-DEFAULT_PAGES = 5
+DEFAULT_PAGES = 10  # ~500 ofertas por ejecución (ADR-011)
 DEFAULT_MAX_DAYS_OLD = 7
 RESULTS_PER_PAGE = 50
 
