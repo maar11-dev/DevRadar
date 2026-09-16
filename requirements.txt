@@ -1,0 +1,23 @@
+# --- Pipeline de datos ---
+requests>=2.31
+beautifulsoup4>=4.12
+python-dotenv>=1.0
+
+# --- Transformación (dbt sobre DuckDB) ---
+dbt-core>=1.8
+dbt-duckdb>=1.8
+duckdb>=1.0
+
+# --- LLM ---
+groq>=0.11          # proveedor por defecto en producción
+ollama>=0.3          # alternativa local para desarrollo/pruebas offline
+
+# --- Dashboard ---
+streamlit>=1.38
+pandas>=2.2
+
+# --- Testing y calidad de código ---
+pytest>=8.3
+black>=24.8
+ruff>=0.6
+pre-commit>=3.8

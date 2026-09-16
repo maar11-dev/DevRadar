@@ -1,0 +1,61 @@
+name: DevRadar Pipeline
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # todos los lunes a las 06:00 UTC
+  workflow_dispatch:        # permite lanzarlo manualmente desde la pestaña Actions
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      DBT_DUCKDB_PATH: ${{ github.workspace }}/data/devradar.duckdb
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt_project
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Crear carpeta de datos
+        run: mkdir -p data
+
+      - name: Ejecutar ingesta de ofertas
+        run: python src/ingest.py
+
+      - name: Extraer datos estructurados con el LLM
+        run: python src/extract.py
+
+      - name: dbt seed (catálogo de tecnologías)
+        run: dbt seed
+        working-directory: dbt_project
+
+      - name: dbt run
+        run: dbt run
+        working-directory: dbt_project
+
+      - name: dbt test
+        run: dbt test
+        working-directory: dbt_project
+
+      - name: Subir base DuckDB resultante como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: devradar-duckdb
+          path: data/devradar.duckdb
+          retention-days: 7
+
+# Nota: el paso de publicación del dashboard (Streamlit) todavía no está
+# incluido aquí — depende de dónde se despliegue (Streamlit Community Cloud,
+# por ejemplo, lee directamente el repo, así que necesitaría el .duckdb
+# accesible desde ahí, no solo como artefacto de Actions). Pendiente de
+# decidir y documentar en docs/decisions.md cuando se resuelva.
