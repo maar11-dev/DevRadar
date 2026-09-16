@@ -17,7 +17,7 @@ Todo el pipeline corre de forma autónoma en la nube, sin infraestructura propia
 ```
 Scraping/API ofertas → Extracción de skills (LLM) → dbt (staging → intermediate → marts) → Dashboard
                               ↑                              ↑
-                        GitHub Actions (orquestación semanal, sin servidor propio)
+                        GitHub Actions (orquestación diaria, sin servidor propio)
 ```
 
 Detalle completo de componentes y decisiones de diseño en [`docs/architecture.md`](docs/architecture.md).
@@ -30,7 +30,7 @@ Detalle completo de componentes y decisiones de diseño en [`docs/architecture.m
 | Extracción de entidades | LLM vía Groq API (con soporte opcional para Ollama local) |
 | Transformación | dbt-core + dbt-duckdb |
 | Almacenamiento | DuckDB |
-| Orquestación | GitHub Actions (cron semanal) |
+| Orquestación | GitHub Actions (cron diario) |
 | Visualización | Streamlit |
 | Calidad de datos | dbt tests |
 
@@ -81,9 +81,11 @@ streamlit run dashboard/app.py
 
 ## ⏱️ Ejecución automatizada
 
-El pipeline completo se ejecuta semanalmente vía GitHub Actions (`.github/workflows/pipeline.yml`), sin necesidad de infraestructura propia. La API key de Groq se gestiona como *secret* del repositorio (ver [`reglas de seguridad/coding-rules.md`](reglas%20de%20seguridad/coding-rules.md)).
+El pipeline completo se ejecuta a diario vía GitHub Actions (`.github/workflows/pipeline.yml`), sin necesidad de infraestructura propia. La API key de Groq se gestiona como *secret* del repositorio (ver [`reglas de seguridad/coding-rules.md`](reglas%20de%20seguridad/coding-rules.md)).
 
 Si una ejecución falla, el propio workflow abre una issue «Fallo del pipeline DevRadar» (o comenta la que ya esté abierta), de modo que GitHub avisa por email. Para probar el aviso sin consumir cuota de Adzuna ni de Groq, lánzalo a mano marcando la opción *simular_fallo*.
+
+Cada ejecución clasifica como mucho 250 ofertas, para no agotar la cuota diaria gratuita de Groq (200.000 tokens); si la cuota se agota antes, se detiene sin fallar y las ofertas restantes se procesan en la siguiente ejecución (ver ADR-012).
 
 Además, el workflow **CI** (`.github/workflows/ci.yml`) ejecuta `pre-commit` y los tests unitarios y de integración en cada push y pull request, sin necesidad de secrets.
 

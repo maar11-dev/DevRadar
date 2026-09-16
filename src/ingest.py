@@ -35,8 +35,10 @@ FUENTE = "adzuna"
 
 DEFAULT_COUNTRY = "es"
 DEFAULT_CATEGORY = "it-jobs"
-DEFAULT_PAGES = 10  # ~500 ofertas por ejecución (ADR-011)
-DEFAULT_MAX_DAYS_OLD = 7
+# Ejecución diaria (ADR-012): ofertas de los dos últimos días, con solapamiento
+# para no perder las publicadas cerca de la hora del cron.
+DEFAULT_PAGES = 5
+DEFAULT_MAX_DAYS_OLD = 2
 RESULTS_PER_PAGE = 50
 
 CACHE_DIR = PROJECT_ROOT / "data" / "cache" / "adzuna"

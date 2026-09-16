@@ -94,8 +94,8 @@ def cargar_marts(db_path: str) -> dict[str, pd.DataFrame]:
 def descargar_base_publicada(url: str) -> str:
     """Descarga la base de la rama ``data`` a un archivo temporal.
 
-    La descarga se cachea una hora: el pipeline publica datos nuevos una vez
-    por semana, así que no hace falta más frecuencia.
+    La descarga se cachea una hora: el pipeline publica datos nuevos como
+    mucho una vez al día, así que no hace falta más frecuencia.
 
     Args:
         url: URL del archivo ``devradar.duckdb`` en la rama ``data``.

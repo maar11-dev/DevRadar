@@ -199,3 +199,26 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 **Consecuencias**:
 - Se pierde la ubicación de las copias descartadas (hoy no se usa en ningún mart).
 - Con la restauración de ADR-008 solo se clasifican las ofertas nuevas: unas 500 por semana, alrededor de 55 minutos por ejecución, dentro del límite de 1.000 peticiones al día de Groq.
+
+---
+
+## ADR-012: Ejecución diaria con límite de ofertas por ejecución (cuota de tokens de Groq)
+
+**Contexto**: ADR-011 subió la ingesta a 10 páginas por ejecución semanal (unas 500 ofertas) calculando el coste con el límite de 1.000 peticiones al día de Groq. Ese cálculo era incompleto: el plan gratuito también limita a **200.000 tokens al día** para `openai/gpt-oss-20b`, y cada oferta consume unos 650 tokens, así que caben unas 300 ofertas al día. La ejecución #5 agotó la cuota a mitad de la clasificación. Además, el cliente de Groq reintentaba cada oferta durante minutos ante un límite que no se iba a liberar, y si todas las extracciones fallaban el paso terminaba con error, sin publicar lo ya clasificado.
+
+**Decisión**:
+- El workflow se ejecuta **a diario** (06:00 UTC) y descarga 5 páginas de ofertas de los **últimos 2 días**. Unas 110 ofertas nuevas al día (~785 por semana) suponen unos 70.000 tokens, muy por debajo del límite. Esto sustituye al volumen de ADR-011; su deduplicación sigue vigente.
+- Cada ejecución clasifica como mucho **250 ofertas** (`MAX_OFERTAS_POR_EJECUCION`); las demás quedan pendientes para la siguiente. La clasificación se hace en un solo paso del workflow (la ingesta usa `--skip-extract`), para que el límite se aplique una vez.
+- `src/extract.py` gestiona los reintentos de Groq: ante un límite por minuto espera (`Retry-After`, máximo 90 s) y reintenta; ante un límite **diario** (`per day`) se detiene enseguida con `LLMQuotaExhaustedError`. La clasificación termina sin error, publica lo ya clasificado, deja un aviso en el resumen de Actions y no guarda filas de error para las ofertas no intentadas.
+
+**Alternativas consideradas**:
+- Mantener la ejecución semanal con un límite de ofertas: el backlog crecería cada semana (unas 785 ofertas nuevas frente a unas 300 clasificables por ejecución).
+- Cambiar de modelo o pasar al plan de pago de Groq: los límites son por modelo y otros modelos tienen cuotas distintas, pero cambiar el modelo afecta a la calidad de la extracción y el plan de pago va en contra del objetivo de coste cero.
+- Reducir las páginas a las de antes (5 semanales): se perderían dos tercios del mercado.
+
+**Consecuencias**:
+- Una ejecución diaria típica tarda unos 12-15 minutos. Tras un periodo sin ejecutar, o después de lanzar una reclasificación, el backlog se procesa en varios días a razón de 250 ofertas diarias.
+- La rama `data` puede recibir un commit al día (solo si los datos cambian). El historial crece más rápido que con la ejecución semanal: sigue aplicando el umbral de tamaño de ADR-008.
+- Adzuna recibe unas 5 peticiones al día (unas 150 al mes), dentro de su límite de 2.500 al mes.
+- Al lanzar el workflow a mano se pueden subir `dias_atras` y `paginas` para recuperar días sin ejecución (p. ej. 7 días y 10 páginas); las ofertas que no quepan en la cuota del día se clasifican en las ejecuciones siguientes.
+- Las ejecuciones manuales el mismo día comparten la cuota diaria de Groq: si se lanzan varias seguidas, las últimas pueden dejar ofertas pendientes (sin error).

@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -35,6 +36,12 @@ LLM_TIMEOUT_SECONDS = 60
 # El plan gratuito de Groq limita a 8000 tokens/minuto y cada oferta consume
 # unos 550: 6 s entre llamadas (~10/min) deja margen.
 SECONDS_BETWEEN_CALLS = 6.0
+# El plan gratuito también limita a 200.000 tokens al día (~300 ofertas): cada
+# ejecución clasifica como mucho este número de ofertas; el resto queda
+# pendiente para la siguiente (ADR-012).
+MAX_OFERTAS_POR_EJECUCION = 250
+GROQ_MAX_ATTEMPTS = 5
+GROQ_MAX_WAIT_SECONDS = 90.0
 # Se guarda con cada clasificación; incrementarla al cambiar PROMPT_TEMPLATE de
 # forma que merezca reclasificar ofertas antiguas (ADR-009).
 PROMPT_VERSION = "2"
@@ -86,6 +93,10 @@ class LLMConfigurationError(RuntimeError):
     """Error de configuración del proveedor LLM (no se reintenta ni se ignora)."""
 
 
+class LLMQuotaExhaustedError(RuntimeError):
+    """Se ha agotado la cuota diaria del proveedor LLM: no tiene sentido reintentar hoy."""
+
+
 def _get_provider() -> str:
     """Devuelve el proveedor configurado en ``LLM_PROVIDER``."""
     provider = os.getenv("LLM_PROVIDER", "").strip().lower() or DEFAULT_PROVIDER
@@ -113,8 +124,25 @@ def _get_groq_client():
         raise LLMConfigurationError(
             "Falta GROQ_API_KEY (defínela en .env o como secret del repositorio)"
         )
-    # El cliente ya reintenta con backoff exponencial ante 429 y errores 5xx.
-    return Groq(api_key=api_key, max_retries=4, timeout=LLM_TIMEOUT_SECONDS)
+    # Sin reintentos automáticos: _call_groq los gestiona para distinguir el
+    # límite por minuto (esperar y reintentar) del diario (parar).
+    return Groq(api_key=api_key, max_retries=0, timeout=LLM_TIMEOUT_SECONDS)
+
+
+def _is_daily_limit(exc: Exception) -> bool:
+    """Indica si un 429 de Groq corresponde a un límite diario (tokens o peticiones)."""
+    return "per day" in str(exc).lower()
+
+
+def _groq_retry_wait(exc: Exception, attempt: int) -> float:
+    """Segundos de espera antes de reintentar: Retry-After o backoff exponencial."""
+    response = getattr(exc, "response", None)
+    retry_after = response.headers.get("retry-after") if response is not None else None
+    try:
+        wait = float(retry_after)
+    except (TypeError, ValueError):
+        wait = 2**attempt + random.uniform(0, 1)
+    return min(wait, GROQ_MAX_WAIT_SECONDS)
 
 
 def _call_groq(prompt: str, model: str) -> str:
@@ -124,17 +152,34 @@ def _call_groq(prompt: str, model: str) -> str:
         # Modelos de razonamiento: "low" reduce ~60 % los tokens generados sin
         # cambiar el resultado de la extracción. Otros modelos rechazan el parámetro.
         extra_args["reasoning_effort"] = "low"
-    response = _get_groq_client().chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0,
-        response_format={"type": "json_object"},
-        **extra_args,
-    )
-    return response.choices[0].message.content or ""
+    from groq import APIConnectionError, InternalServerError, RateLimitError
+
+    client = _get_groq_client()
+    for attempt in range(GROQ_MAX_ATTEMPTS):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0,
+                response_format={"type": "json_object"},
+                **extra_args,
+            )
+            return response.choices[0].message.content or ""
+        except RateLimitError as exc:
+            if _is_daily_limit(exc):
+                raise LLMQuotaExhaustedError(
+                    "Cuota diaria de Groq agotada (tokens o peticiones por día)"
+                ) from None
+            error = exc
+        except (APIConnectionError, InternalServerError) as exc:
+            error = exc
+        if attempt == GROQ_MAX_ATTEMPTS - 1:
+            raise error
+        time.sleep(_groq_retry_wait(error, attempt))
+    raise AssertionError("inalcanzable")
 
 
 def _call_ollama(prompt: str, model: str) -> str:
@@ -166,6 +211,7 @@ def llamar_llm(prompt: str) -> str:
     Raises:
         LLMConfigurationError: Si el proveedor o sus credenciales no están bien
             configurados.
+        LLMQuotaExhaustedError: Si se ha agotado la cuota diaria del proveedor.
         Exception: Errores de red o de la API del proveedor.
     """
     provider = _get_provider()
@@ -254,10 +300,11 @@ def extraer_datos_oferta(oferta: dict) -> dict:
 
     Raises:
         LLMConfigurationError: Si el proveedor LLM no está bien configurado.
+        LLMQuotaExhaustedError: Si se ha agotado la cuota diaria del proveedor.
     """
     try:
         respuesta = llamar_llm(_build_prompt(oferta))
-    except LLMConfigurationError:
+    except (LLMConfigurationError, LLMQuotaExhaustedError):
         raise
     except Exception as exc:  # noqa: BLE001 - cualquier fallo del proveedor
         logger.warning("Fallo al llamar al LLM: %s", type(exc).__name__)
@@ -288,25 +335,36 @@ def extraer_datos_oferta(oferta: dict) -> dict:
     }
 
 
+def _avisar(mensaje: str) -> None:
+    """Registra un aviso y, en GitHub Actions, lo muestra también en el resumen."""
+    logger.warning(mensaje)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        print(f"::warning::{mensaje}", flush=True)
+
+
 def clasificar_ofertas_pendientes(
     con: duckdb.DuckDBPyConnection,
-    limit: int | None = None,
+    limit: int | None = MAX_OFERTAS_POR_EJECUCION,
     reclasificar_sin_tecnologias: bool = False,
 ) -> tuple[int, int]:
     """Clasifica las ofertas de ``raw_ofertas`` que aún no tienen extracción válida.
 
     Cada intento se guarda en ``raw_ofertas_clasificadas``; las ofertas cuyo
-    último intento falló se vuelven a procesar en la siguiente ejecución.
+    último intento falló se vuelven a procesar en la siguiente ejecución. Si se
+    agota la cuota diaria del LLM, se detiene sin error y las ofertas restantes
+    quedan pendientes (ADR-012).
 
     Args:
         con: Conexión DuckDB con permisos de escritura.
-        limit: Máximo de ofertas a procesar (``None`` para todas).
+        limit: Máximo de ofertas a procesar (``None`` para todas). Por defecto,
+            ``MAX_OFERTAS_POR_EJECUCION``.
         reclasificar_sin_tecnologias: Si es ``True``, procesa además las ofertas
             cuya última extracción correcta no devolvió ninguna tecnología y se
             hizo con una versión anterior del prompt (``PROMPT_VERSION``).
 
     Returns:
-        Tupla ``(procesadas, con_error)``.
+        Tupla ``(procesadas, con_error)``; las ofertas no intentadas por falta
+        de cuota no cuentan como procesadas.
 
     Raises:
         RuntimeError: Si todas las ofertas procesadas fallaron, para que el
@@ -351,12 +409,21 @@ def clasificar_ofertas_pendientes(
     provider = _get_provider() if pending else None
     model = _get_model(provider) if provider else None
     failures = 0
+    processed = 0
     for index, (id_oferta, titulo, descripcion) in enumerate(pending):
         if index and provider == "groq":
             time.sleep(SECONDS_BETWEEN_CALLS)
-        result = extraer_datos_oferta(
-            {"id": id_oferta, "titulo": titulo, "descripcion": descripcion}
-        )
+        try:
+            result = extraer_datos_oferta(
+                {"id": id_oferta, "titulo": titulo, "descripcion": descripcion}
+            )
+        except LLMQuotaExhaustedError as exc:
+            _avisar(
+                f"{exc}: se detiene la clasificación tras {processed} ofertas; "
+                f"{len(pending) - index} quedan pendientes para la siguiente ejecución."
+            )
+            break
+        processed += 1
         if result["error"]:
             failures += 1
             logger.warning("Oferta %s sin clasificar: %s", id_oferta, result["error"])
@@ -384,19 +451,22 @@ def clasificar_ofertas_pendientes(
             ],
         )
 
-    if pending and failures == len(pending):
+    if processed and failures == processed:
         raise RuntimeError(
             f"Fallaron las {failures} extracciones; revisa el proveedor LLM"
         )
-    logger.info("Clasificadas %d ofertas (%d con error)", len(pending), failures)
-    return len(pending), failures
+    logger.info("Clasificadas %d ofertas (%d con error)", processed, failures)
+    return processed, failures
 
 
 def main() -> None:
     """Punto de entrada: clasifica las ofertas pendientes de la base DuckDB."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--limit", type=int, default=None, help="máximo de ofertas a procesar"
+        "--limit",
+        type=int,
+        default=MAX_OFERTAS_POR_EJECUCION,
+        help="máximo de ofertas a procesar (por defecto, %(default)s)",
     )
     parser.add_argument(
         "--reclasificar-sin-tecnologias",

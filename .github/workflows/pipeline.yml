@@ -2,7 +2,7 @@ name: DevRadar Pipeline
 
 on:
   schedule:
-    - cron: '0 6 * * 1'   # todos los lunes a las 06:00 UTC
+    - cron: '0 6 * * *'   # todos los días a las 06:00 UTC (ADR-012)
   workflow_dispatch:        # permite lanzarlo manualmente desde la pestaña Actions
     inputs:
       simular_fallo:
@@ -13,6 +13,14 @@ on:
         description: 'Volver a clasificar con el prompt actual las ofertas sin tecnologías de prompts anteriores (consume cuota de Groq)'
         type: boolean
         default: false
+      dias_atras:
+        description: 'Antigüedad máxima de las ofertas en días (subir para recuperar días sin ejecución)'
+        type: number
+        default: 2
+      paginas:
+        description: 'Páginas de Adzuna a descargar (50 ofertas cada una)'
+        type: number
+        default: 5
 
 # Permisos mínimos del GITHUB_TOKEN: publicar en la rama `data` y abrir una
 # issue si la ejecución falla.
@@ -59,8 +67,8 @@ jobs:
       - name: Crear carpeta de datos
         run: mkdir -p data
 
-      # Cada ejecución parte de la base publicada la semana anterior, para que el
-      # histórico se acumule y solo se clasifiquen las ofertas nuevas (ADR-008).
+      # Cada ejecución parte de la base publicada en la ejecución anterior, para que
+      # el histórico se acumule y solo se clasifiquen las ofertas nuevas (ADR-008).
       - name: Restaurar la base de la ejecución anterior (rama data)
         run: |
           if git fetch --depth=1 origin data; then
@@ -70,8 +78,14 @@ jobs:
             echo "La rama data todavía no existe: se empieza con una base vacía."
           fi
 
+      # La clasificación se hace solo en el paso siguiente, para que el límite de
+      # ofertas por ejecución (cuota diaria de Groq, ADR-012) se aplique una vez.
       - name: Ejecutar ingesta de ofertas
-        run: python src/ingest.py
+        env:
+          # En la ejecución programada no hay inputs: se usan los valores por defecto.
+          DIAS_ATRAS: ${{ inputs.dias_atras || 2 }}
+          PAGINAS: ${{ inputs.paginas || 5 }}
+        run: python src/ingest.py --skip-extract --max-days-old "$DIAS_ATRAS" --pages "$PAGINAS"
 
       - name: Extraer datos estructurados con el LLM
         env:
