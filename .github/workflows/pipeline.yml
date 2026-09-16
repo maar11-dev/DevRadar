@@ -2,7 +2,9 @@ name: DevRadar Pipeline
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # todos los días a las 06:00 UTC (ADR-012)
+    # 06:17 y no a la hora en punto: GitHub puede retrasar o descartar los cron
+    # programados en el minuto 0, que es cuando más carga tiene.
+    - cron: '17 6 * * *'  # todos los días a las 06:17 UTC (ADR-012)
   workflow_dispatch:        # permite lanzarlo manualmente desde la pestaña Actions
     inputs:
       simular_fallo:

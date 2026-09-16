@@ -222,3 +222,5 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 - Adzuna recibe unas 5 peticiones al día (unas 150 al mes), dentro de su límite de 2.500 al mes.
 - Al lanzar el workflow a mano se pueden subir `dias_atras` y `paginas` para recuperar días sin ejecución (p. ej. 7 días y 10 páginas); las ofertas que no quepan en la cuota del día se clasifican en las ejecuciones siguientes.
 - Las ejecuciones manuales el mismo día comparten la cuota diaria de Groq: si se lanzan varias seguidas, las últimas pueden dejar ofertas pendientes (sin error).
+
+**Nota posterior**: el cron se programa a las 06:17 UTC en lugar de a las 06:00. GitHub advierte de que las ejecuciones programadas pueden retrasarse o descartarse con mucha carga, sobre todo al comienzo de cada hora.
