@@ -224,3 +224,21 @@ Este documento recoge las decisiones de diseño relevantes del proyecto, el cont
 - Las ejecuciones manuales el mismo día comparten la cuota diaria de Groq: si se lanzan varias seguidas, las últimas pueden dejar ofertas pendientes (sin error).
 
 **Nota posterior**: el cron se programa a las 06:17 UTC en lugar de a las 06:00. GitHub advierte de que las ejecuciones programadas pueden retrasarse o descartarse con mucha carga, sobre todo al comienzo de cada hora.
+
+---
+
+## ADR-013: El dashboard desplegado detecta datos nuevos por la huella de la base
+
+**Contexto**: Según ADR-008, el dashboard desplegado cacheaba la descarga de la base durante una hora. Tras la ejecución #6, los datos nuevos no aparecían en la web aunque ya estaban publicados en la rama `data`. Además, la CDN de `raw.githubusercontent.com` cachea los archivos unos 5 minutos, así que durante ese rato puede servir la huella nueva junto a la base antigua.
+
+**Decisión**: La app consulta `devradar.sha256` (65 bytes) cada 5 minutos y solo vuelve a descargar `devradar.duckdb` cuando la huella cambia. La descarga se cachea por huella y se comprueba: si el contenido descargado no coincide con la huella publicada, se muestra igualmente pero no se cachea, y la siguiente carga lo vuelve a intentar. Cada versión se guarda en un directorio propio (el archivo debe seguir llamándose `devradar.duckdb`, porque las vistas de dbt referencian ese catálogo) y las versiones anteriores se borran.
+
+**Alternativas consideradas**:
+- Reducir el TTL de la descarga completa: descargaría la base entera (unos 2 MB y creciendo) cada pocos minutos aunque no haya cambios.
+- Consultar el último commit de la rama `data` con la API de GitHub: la API sin autenticar permite 60 peticiones por hora por IP, y Streamlit Community Cloud comparte IPs entre apps.
+- Reiniciar la app a mano tras cada publicación: no es automático.
+
+**Consecuencias**:
+- Los datos nuevos aparecen en la web entre 5 y 10 minutos después de la publicación, sin reiniciar la app. Esto sustituye al retraso de hasta una hora descrito en ADR-008.
+- Comprobar la huella tras cada descarga cuesta una lectura completa de la base; con el tamaño actual es inmediato.
+

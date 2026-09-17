@@ -9,9 +9,12 @@ Origen de la base (ver ``resolver_base_datos`` y ADR-008):
   (la misma ruta que usan el pipeline y dbt).
 - Desplegado en Streamlit Community Cloud: ninguna de las dos existe (``data/``
   no se versiona), así que se descarga ``devradar.duckdb`` de la rama ``data``
-  del repositorio, que el workflow actualiza en cada ejecución (``DATA_BRANCH_DB_URL``).
+  del repositorio, que el workflow actualiza en cada ejecución
+  (``DATA_BRANCH_URL``). Cada pocos minutos se consulta ``devradar.sha256`` y
+  la base solo se vuelve a descargar cuando su huella cambia.
 """
 
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -28,13 +31,15 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.db import DEFAULT_DB_PATH, get_db_path
+from src.publish_db import DB_FILENAME, FINGERPRINT_FILENAME, content_fingerprint
 
 # Base publicada por el workflow en la rama `data` (repo público, sin credenciales).
 # En un fork, cambia `maar11-dev/DevRadar` por tu repositorio.
-DATA_BRANCH_DB_URL = (
-    "https://raw.githubusercontent.com/maar11-dev/DevRadar/data/devradar.duckdb"
-)
+DATA_BRANCH_URL = "https://raw.githubusercontent.com/maar11-dev/DevRadar/data/"
 DOWNLOAD_TIMEOUT_SECONDS = 60
+# Cada cuánto se comprueba si hay datos nuevos (la huella ocupa 65 bytes).
+FINGERPRINT_TTL_SECONDS = 300
+DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "devradar"
 
 MARTS = (
     "demanda_tecnologias_mensual",
@@ -90,27 +95,65 @@ def cargar_marts(db_path: str) -> dict[str, pd.DataFrame]:
     return datos
 
 
-@st.cache_data(ttl=3600, show_spinner="Descargando los datos publicados…")
-def descargar_base_publicada(url: str) -> str:
-    """Descarga la base de la rama ``data`` a un archivo temporal.
+class BaseDesactualizada(Exception):
+    """La CDN de GitHub aún sirve una versión de la base distinta de la huella publicada."""
 
-    La descarga se cachea una hora: el pipeline publica datos nuevos como
-    mucho una vez al día, así que no hace falta más frecuencia.
+    def __init__(self, ruta: str) -> None:
+        super().__init__(ruta)
+        self.ruta = ruta
+
+
+@st.cache_data(ttl=FINGERPRINT_TTL_SECONDS, show_spinner=False)
+def huella_publicada(url: str) -> str:
+    """Lee la huella de la base publicada en la rama ``data``.
 
     Args:
-        url: URL del archivo ``devradar.duckdb`` en la rama ``data``.
+        url: URL de ``devradar.sha256``.
 
     Returns:
-        Ruta local del archivo descargado.
+        Huella hexadecimal del contenido de la base publicada.
     """
-    destino = Path(tempfile.gettempdir()) / "devradar" / "devradar.duckdb"
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    parcial = destino.with_suffix(".part")
+    respuesta = requests.get(url, timeout=DOWNLOAD_TIMEOUT_SECONDS)
+    respuesta.raise_for_status()
+    return respuesta.text.strip()
+
+
+@st.cache_data(max_entries=2, show_spinner="Descargando los datos publicados…")
+def descargar_base_publicada(url: str, huella: str) -> str:
+    """Descarga la base de la rama ``data`` y comprueba que coincide con su huella.
+
+    El resultado se cachea por huella: mientras no cambie, no se vuelve a
+    descargar. Cada versión se guarda en un directorio propio (el archivo debe
+    seguir llamándose ``devradar.duckdb``) y se borran las versiones anteriores.
+
+    Args:
+        url: URL de ``devradar.duckdb`` en la rama ``data``.
+        huella: Huella publicada que debe tener el contenido descargado.
+
+    Returns:
+        Ruta local de la base descargada.
+
+    Raises:
+        BaseDesactualizada: Si el contenido descargado no coincide con la huella
+            (la CDN de GitHub cachea unos minutos). No se cachea, así que la
+            siguiente carga lo vuelve a intentar.
+    """
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    parcial = DOWNLOAD_DIR / f"{huella[:16]}.part"
     with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS) as respuesta:
         respuesta.raise_for_status()
         with open(parcial, "wb") as archivo:
             archivo.writelines(respuesta.iter_content(chunk_size=1 << 20))
+    huella_real = content_fingerprint(parcial)
+
+    destino = DOWNLOAD_DIR / huella_real[:16] / DB_FILENAME
+    destino.parent.mkdir(exist_ok=True)
     parcial.replace(destino)
+    for antiguo in DOWNLOAD_DIR.iterdir():
+        if antiguo.is_dir() and antiguo != destino.parent:
+            shutil.rmtree(antiguo, ignore_errors=True)
+    if huella_real != huella:
+        raise BaseDesactualizada(str(destino))
     return str(destino)
 
 
@@ -125,10 +168,13 @@ def resolver_base_datos() -> tuple[Path, str]:
         # Local: DBT_DUCKDB_PATH definida, o data/devradar.duckdb generado por el pipeline.
         return ruta_local, f"archivo local `{ruta_local}`"
     # Desplegado (Streamlit Community Cloud): base publicada en la rama `data`.
-    return (
-        Path(descargar_base_publicada(DATA_BRANCH_DB_URL)),
-        "rama `data` del repositorio",
-    )
+    huella = huella_publicada(DATA_BRANCH_URL + FINGERPRINT_FILENAME)
+    try:
+        ruta = descargar_base_publicada(DATA_BRANCH_URL + DB_FILENAME, huella)
+    except BaseDesactualizada as exc:
+        # Se muestra lo descargado; la versión nueva llegará en una próxima carga.
+        ruta = exc.ruta
+    return Path(ruta), "rama `data` del repositorio"
 
 
 def ranking_tecnologias(demanda: pd.DataFrame, top: int) -> pd.DataFrame:
@@ -211,51 +257,59 @@ def grafico_evolucion(serie: pd.DataFrame, color: str) -> alt.Chart:
     return (linea + puntos + regla + objetivo).properties(height=280)
 
 
+def reparto_modalidad(modalidad: pd.DataFrame) -> pd.DataFrame:
+    """Suma las ofertas por modalidad en el periodo y calcula su porcentaje.
+
+    Args:
+        modalidad: Filas de ``tendencia_modalidad`` del periodo.
+
+    Returns:
+        DataFrame con ``modalidad``, ``etiqueta``, ``num_ofertas`` y
+        ``pct_ofertas``, en el orden fijo de ``MODALIDADES``.
+    """
+    totales = modalidad.groupby("modalidad", as_index=False)["num_ofertas"].sum()
+    totales["pct_ofertas"] = (
+        100 * totales["num_ofertas"] / totales["num_ofertas"].sum()
+    ).round(1)
+    totales["etiqueta"] = totales["modalidad"].map(ETIQUETAS_MODALIDAD)
+    totales["orden"] = totales["modalidad"].map(MODALIDADES.index)
+    return totales.sort_values("orden").reset_index(drop=True)
+
+
 def grafico_modalidad(
-    modalidad: pd.DataFrame, colores: list[str], superficie: str
+    reparto: pd.DataFrame, colores: list[str], superficie: str
 ) -> alt.Chart:
-    """Barras apiladas al 100 % por mes con el reparto de modalidades."""
-    datos = modalidad.assign(
-        etiqueta=modalidad["modalidad"].map(ETIQUETAS_MODALIDAD),
-        orden=modalidad["modalidad"].map(MODALIDADES.index),
-        mes_etiqueta=modalidad["mes"].dt.strftime("%b %Y"),
+    """Gráfico circular (donut) con el reparto de modalidades del periodo."""
+    datos = reparto.assign(
+        texto=reparto["etiqueta"]
+        + " · "
+        + reparto["pct_ofertas"].map("{:.0f} %".format)
     )
-    orden_meses = datos.sort_values("mes")["mes_etiqueta"].unique().tolist()
-    return (
-        alt.Chart(datos)
-        .mark_bar(stroke=superficie, strokeWidth=2)
-        .encode(
-            x=alt.X(
-                "mes_etiqueta:O",
-                title=None,
-                sort=orden_meses,
-                axis=alt.Axis(labelAngle=0),
-                scale=alt.Scale(paddingInner=0.4, paddingOuter=0.2),
+    base = alt.Chart(datos).encode(
+        theta=alt.Theta("num_ofertas:Q", stack=True),
+        order=alt.Order("orden:Q"),
+        color=alt.Color(
+            "etiqueta:N",
+            title=None,
+            scale=alt.Scale(
+                domain=[ETIQUETAS_MODALIDAD[m] for m in MODALIDADES], range=colores
             ),
-            y=alt.Y(
-                "pct_ofertas:Q",
-                title="% de ofertas",
-                stack="normalize",
-                axis=alt.Axis(format="%"),
-            ),
-            color=alt.Color(
-                "etiqueta:N",
-                title="Modalidad",
-                scale=alt.Scale(
-                    domain=[ETIQUETAS_MODALIDAD[m] for m in MODALIDADES], range=colores
-                ),
-                legend=alt.Legend(orient="top"),
-            ),
-            order=alt.Order("orden:Q"),
-            tooltip=[
-                alt.Tooltip("pct_ofertas:Q", title="% de ofertas", format=".1f"),
-                alt.Tooltip("num_ofertas:Q", title="Ofertas"),
-                alt.Tooltip("etiqueta:N", title="Modalidad"),
-                alt.Tooltip("mes_etiqueta:O", title="Mes"),
-            ],
-        )
-        .properties(height=280)
+            legend=alt.Legend(orient="bottom", direction="horizontal"),
+        ),
+        tooltip=[
+            alt.Tooltip("pct_ofertas:Q", title="% de ofertas", format=".1f"),
+            alt.Tooltip("num_ofertas:Q", title="Ofertas"),
+            alt.Tooltip("etiqueta:N", title="Modalidad"),
+        ],
     )
+    # Separación de 2 px entre porciones con el color de fondo.
+    porciones = base.mark_arc(
+        innerRadius=70, outerRadius=115, stroke=superficie, strokeWidth=2
+    )
+    etiquetas = base.mark_text(radius=150, fontSize=14).encode(
+        text="texto:N", color=alt.value("gray")
+    )
+    return (porciones + etiquetas).properties(height=330)
 
 
 def grafico_sin_tecnologia(cobertura: pd.DataFrame, color: str) -> alt.Chart:
@@ -454,21 +508,20 @@ def main() -> None:
         if modalidad.empty:
             st.info("No hay ofertas con modalidad conocida en el periodo.")
         else:
+            reparto = reparto_modalidad(modalidad)
+            st.caption(
+                f"Reparto en el periodo de las {_formato_entero(int(reparto['num_ofertas'].sum()))} "
+                "ofertas cuya modalidad se ha podido detectar."
+            )
             st.altair_chart(
-                grafico_modalidad(modalidad, paleta["serie"], paleta["superficie"]),
+                grafico_modalidad(reparto, paleta["serie"], paleta["superficie"]),
                 width="stretch",
             )
             with st.expander("Ver tabla"):
                 st.dataframe(
-                    modalidad.assign(
-                        mes=modalidad["mes"].dt.strftime("%Y-%m"),
-                        modalidad=modalidad["modalidad"].map(ETIQUETAS_MODALIDAD),
-                    )[["mes", "modalidad", "num_ofertas", "pct_ofertas"]]
-                    .sort_values(["mes", "modalidad"])
-                    .rename(
+                    reparto[["etiqueta", "num_ofertas", "pct_ofertas"]].rename(
                         columns={
-                            "mes": "Mes",
-                            "modalidad": "Modalidad",
+                            "etiqueta": "Modalidad",
                             "num_ofertas": "Ofertas",
                             "pct_ofertas": "% ofertas",
                         }
